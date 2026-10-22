@@ -628,7 +628,7 @@ Fork 可在 Actions 中运行 `Commit image`，选择包含目标提交的工作
 gh workflow run image.yml --repo OWNER/codex-proxy-rs --ref main -f ref=FULL_COMMIT_SHA
 ```
 
-前后端质量检查、各平台漏洞扫描和容器运行验收全部通过后，发布到 `ghcr.io/<小写 owner>/codex-proxy-rs:sha-<完整 SHA>`。运行摘要记录源码提交、工作流提交和镜像 digest；复现部署时使用摘要中的 `ghcr.io/…@sha256:…`，同一提交重新构建仍可能获得安全更新后的不同 digest
+前后端质量检查、依赖审计、各平台漏洞扫描和容器运行验收全部通过后，发布到 `ghcr.io/<小写 owner>/codex-proxy-rs:sha-<完整 SHA>`。运行摘要记录源码提交、工作流提交和镜像 digest；复现部署时使用摘要中的 `ghcr.io/…@sha256:…`，同一提交重新构建仍可能获得安全更新后的不同 digest
 
 镜像使用 `source` 构建类型，不提供官方在线更新；该流程不创建 GitHub Release、版本 tag 或 `latest` 镜像标签。上游 `Release` 流程仅在上游仓库运行
 

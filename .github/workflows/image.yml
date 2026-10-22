@@ -61,6 +61,15 @@ jobs:
     with:
       ref: ${{ needs.source.outputs.sha }}
 
+  security:
+    needs: source
+    permissions:
+      contents: read
+      security-events: write
+    uses: ./.github/workflows/security.yml
+    with:
+      ref: ${{ needs.source.outputs.sha }}
+
   build:
     name: Build and verify (${{ matrix.dockerPlatform }})
     needs: source
@@ -152,7 +161,7 @@ jobs:
           retention-days: 7
 
   publish:
-    needs: [source, quality, build]
+    needs: [source, quality, security, build]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
