@@ -620,6 +620,22 @@ CPR_BUILD_TIME="$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
 docker compose -f deploy/compose.yaml build codex-proxy-rs
 ```
 
+### Fork 的固定提交镜像
+
+Fork 可在 Actions 中运行 `Commit image`，选择包含目标提交的工作流分支，在 `ref` 填入完整的 40 位提交 SHA。工作流按该 SHA 构建源码，平台沿用该提交的 `release/platforms.yaml` 中的 Docker 平台，并使用当前工作流分支的质量检查流程
+
+```bash
+gh workflow run image.yml --repo OWNER/codex-proxy-rs --ref main -f ref=FULL_COMMIT_SHA
+```
+
+前后端质量检查、各平台漏洞扫描和容器运行验收全部通过后，发布到 `ghcr.io/<小写 owner>/codex-proxy-rs:sha-<完整 SHA>`。运行摘要记录源码提交、工作流提交和镜像 digest；复现部署时使用摘要中的 `ghcr.io/…@sha256:…`，同一提交重新构建仍可能获得安全更新后的不同 digest
+
+镜像使用 `source` 构建类型，不提供官方在线更新；该流程不创建 GitHub Release、版本 tag 或 `latest` 镜像标签。上游 `Release` 流程仅在上游仓库运行
+
+部署配置取自同一源码提交，按[手动安装](#手动安装)准备凭据和目录后，在安装目录的 `.env` 中设置 `CPR_IMAGE=ghcr.io/…@sha256:…`，再使用上方拉取和重建命令。包可见性由 fork 的 GHCR 设置决定；私有包需要先登录 GHCR
+
+只验证固定提交时，可手动运行 `CI` 并传入相同的 `ref`。手动 CI 执行全部检查，包含源码联调和容器验收；日常 push / PR 继续按变更范围选择检查
+
 ### 版本命名与升级规则
 
 管理端「系统更新」可临时选择通道检查更新，不保存选择，不会自动下载或安装。

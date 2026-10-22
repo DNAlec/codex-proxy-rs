@@ -21,6 +21,8 @@ env:
 
 jobs:
   release-info:
+    # 官方发行绑定上游命名空间，fork 使用独立的 image.yml 发布提交镜像
+    if: github.repository == 'zyycn/codex-proxy-rs'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     outputs:
