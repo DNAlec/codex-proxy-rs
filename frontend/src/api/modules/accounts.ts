@@ -1,6 +1,6 @@
 import type { RequestOptions } from '../request'
 import type { AccountGroupRef } from './groups'
-import request from '../request'
+import request, { requestStream } from '../request'
 
 export type AccountStatus
   = 'normal' | 'quota_exhausted' | 'rate_limited' | 'disabled' | 'error'
@@ -326,7 +326,7 @@ export interface AccountResetCreditResultResponse {
 }
 
 export interface AccountModelsResponse {
-  models: Array<{ id: string, label: string }>
+  models: Array<{ id: string, label: string, reasoningEfforts: string[] }>
 }
 
 export interface AccountModelCatalogResponse {
@@ -600,6 +600,27 @@ export function consumeAccountResetCredit(data: AccountResetCreditConsumeParam, 
     method: 'POST',
     data,
     ...options,
+  })
+}
+
+export interface AccountConnectionTestRequest {
+  accountId: string
+  modelId: string
+  prompt: string
+  reasoningEffort?: string
+}
+
+export function testAccountConnection(data: AccountConnectionTestRequest, options: RequestOptions = {}) {
+  return requestStream({
+    url: '/api/admin/accounts/connection-test',
+    method: 'POST',
+    data,
+    timeout: 0,
+    ...options,
+  }, {
+    maximumBytes: 1024 * 1024,
+    accept: response => response.status === 200
+      && !!response.header('content-type')?.startsWith('text/event-stream'),
   })
 }
 

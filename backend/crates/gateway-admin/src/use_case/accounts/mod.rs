@@ -21,9 +21,10 @@ use crate::{
     model::{
         AdminError, MutationContext,
         accounts::{
-            AccountConnectionTestEvent, AccountConnectionTestEventStream, AccountListQuery,
-            AccountPageItem, AccountUpdateResult, AccountUsage, AccountUsageWindowQuery,
-            AccountsUpdateResult, BatchUpdateAccounts, UpdateAccount,
+            AccountConnectionTestEvent, AccountConnectionTestEventStream,
+            AccountConnectionTestOptions, AccountListQuery, AccountPageItem, AccountUpdateResult,
+            AccountUsage, AccountUsageWindowQuery, AccountsUpdateResult, BatchUpdateAccounts,
+            UpdateAccount,
         },
         observability::TimeRange,
         provider_credentials::{
@@ -49,8 +50,6 @@ use super::{
     commit_credential_refresh, map_provider_error, map_store_error, publish_committed,
     validate_prepared_rotation,
 };
-
-const CONNECTION_TEST_INPUT: &str = "Reply with exactly OK.";
 
 /// 统一账号页消费的服务
 #[async_trait]
@@ -187,6 +186,7 @@ pub trait AccountsService: Send + Sync {
         &self,
         account_id: ProviderAccountId,
         upstream_model: UpstreamModelId,
+        options: AccountConnectionTestOptions,
     ) -> Result<AccountConnectionTestEventStream, AdminError>;
 }
 
@@ -1087,12 +1087,17 @@ impl AccountsService for DefaultAccountsService {
         &self,
         account_id: ProviderAccountId,
         upstream_model: UpstreamModelId,
+        options: AccountConnectionTestOptions,
     ) -> Result<AccountConnectionTestEventStream, AdminError> {
         let (stored, provider) = self.provider_for_account(&account_id).await?;
         let account = stored.account;
         let model = upstream_model.as_str().to_owned();
         let operation = provider
-            .connection_test_operation(&upstream_model, CONNECTION_TEST_INPUT)
+            .connection_test_operation(
+                &upstream_model,
+                &options.input_text,
+                options.reasoning_effort.as_deref(),
+            )
             .await
             .map_err(|error| map_provider_error(error, "provider connection test"))?;
         let initial = vec![
@@ -1101,7 +1106,8 @@ impl AccountsService for DefaultAccountsService {
             },
             AccountConnectionTestEvent::Request {
                 model,
-                input_text: CONNECTION_TEST_INPUT.to_owned(),
+                input_text: options.input_text,
+                reasoning_effort: options.reasoning_effort,
                 stream: true,
                 store: false,
             },

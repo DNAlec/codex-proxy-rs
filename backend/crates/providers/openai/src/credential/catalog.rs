@@ -76,6 +76,7 @@ pub struct CodexPlanCatalog {
     scope: CodexCatalogScope,
     observed_at: DateTime<Utc>,
     models: Vec<String>,
+    reasoning_efforts: BTreeMap<String, Vec<String>>,
 }
 
 impl CodexPlanCatalog {
@@ -89,7 +90,27 @@ impl CodexPlanCatalog {
             scope,
             observed_at,
             models,
+            reasoning_efforts: BTreeMap::new(),
         }
+    }
+
+    fn with_capabilities(mut self, models: &[CodexCatalogModel]) -> Self {
+        self.reasoning_efforts = models
+            .iter()
+            .map(|model| {
+                (
+                    model.request_model().as_str().to_owned(),
+                    model.capabilities().reasoning_efforts().to_vec(),
+                )
+            })
+            .collect();
+        self
+    }
+
+    /// 返回该套餐目录声明的思考档位，缺失时不推断模型能力
+    #[must_use]
+    pub fn reasoning_efforts(&self, model: &str) -> &[String] {
+        self.reasoning_efforts.get(model).map_or(&[], Vec::as_slice)
     }
 
     #[must_use]
@@ -553,7 +574,8 @@ impl CodexCredentialCatalogService {
             self.profile.clone(),
         );
         let fetched = self.fetch_scope_models(&client, candidates).await?;
-        let catalog = CodexPlanCatalog::new(scope, Utc::now(), model_ids(&fetched.models));
+        let catalog = CodexPlanCatalog::new(scope, Utc::now(), model_ids(&fetched.models))
+            .with_capabilities(&fetched.models);
         self.replace_plan_catalog(&catalog).await?;
         Ok(catalog)
     }
@@ -625,11 +647,10 @@ impl CodexCredentialCatalogService {
                 }
             };
             let entitlement = model_ids(&fetched.models);
-            self.replace_plan_catalog(&CodexPlanCatalog::new(
-                scope.clone(),
-                Utc::now(),
-                entitlement.clone(),
-            ))
+            self.replace_plan_catalog(
+                &CodexPlanCatalog::new(scope.clone(), Utc::now(), entitlement.clone())
+                    .with_capabilities(&fetched.models),
+            )
             .await?;
             for model in &fetched.models {
                 let id = model.request_model().as_str().to_owned();
@@ -997,6 +1018,10 @@ fn encode_plan_catalog(catalog: &CodexPlanCatalog) -> OpaqueProviderData {
                 .collect(),
         ),
     );
+    document.insert(
+        "reasoningEfforts".to_owned(),
+        serde_json::json!(catalog.reasoning_efforts),
+    );
     OpaqueProviderData::new(document)
 }
 
@@ -1027,6 +1052,12 @@ fn decode_plan_catalog(
         .and_then(|value| value.as_array().cloned())
         .filter(|models| !models.is_empty() && models.len() <= MAX_PLAN_CATALOG_MODELS)
         .ok_or(CodexCredentialCatalogError::Cache)?;
+    let reasoning_efforts = fields
+        .remove("reasoningEfforts")
+        .map(serde_json::from_value)
+        .transpose()
+        .map_err(|_| CodexCredentialCatalogError::Cache)?
+        .unwrap_or_default();
     if !fields.is_empty() {
         return Err(CodexCredentialCatalogError::Cache);
     }
@@ -1043,7 +1074,12 @@ fn decode_plan_catalog(
         }
         models.push(model.as_str().to_owned());
     }
-    Ok(CodexPlanCatalog::new(scope.clone(), observed_at, models))
+    Ok(CodexPlanCatalog {
+        scope: scope.clone(),
+        observed_at,
+        models,
+        reasoning_efforts,
+    })
 }
 
 fn same_catalog(

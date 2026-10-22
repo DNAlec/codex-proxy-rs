@@ -702,10 +702,70 @@ impl AccountTestQuery {
     }
 }
 
+/// 手动连接测试正文，提示词只用于当前请求
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct AccountTestRequest {
+    pub account_id: String,
+    pub model_id: String,
+    pub prompt: String,
+    pub reasoning_effort: Option<String>,
+}
+
+impl AccountTestRequest {
+    pub fn validate(&self) -> Result<(), WireValidationError> {
+        AccountTestQuery {
+            account_id: self.account_id.clone(),
+            model_id: self.model_id.clone(),
+        }
+        .validate()?;
+        if self.prompt.trim().is_empty() {
+            return Err(WireValidationError::new("prompt"));
+        }
+        if self.reasoning_effort.as_ref().is_some_and(|effort| {
+            effort.is_empty()
+                || !effort
+                    .bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
+        }) {
+            return Err(WireValidationError::new("reasoningEffort"));
+        }
+        Ok(())
+    }
+
+    pub(super) fn into_command(
+        self,
+    ) -> Result<
+        (
+            ProviderAccountId,
+            UpstreamModelId,
+            AccountConnectionTestOptions,
+        ),
+        WireValidationError,
+    > {
+        self.validate()?;
+        let (account_id, model) = AccountTestQuery {
+            account_id: self.account_id,
+            model_id: self.model_id,
+        }
+        .into_command()?;
+        Ok((
+            account_id,
+            model,
+            AccountConnectionTestOptions {
+                input_text: self.prompt,
+                reasoning_effort: self.reasoning_effort,
+            },
+        ))
+    }
+}
+
 #[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct AccountModelView {
     pub id: String,
     pub label: String,
+    pub reasoning_efforts: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -1076,9 +1136,11 @@ impl From<(DomainConnectionTestEvent, crate::time::TimePresenter)> for AccountCo
             DomainConnectionTestEvent::Request {
                 model,
                 input_text,
+                reasoning_effort,
                 stream,
                 store,
-            } => serde_json::json!({
+            } => {
+                let mut event = serde_json::json!({
                 "type": "request",
                 "payload": {
                     "model": model,
@@ -1089,7 +1151,12 @@ impl From<(DomainConnectionTestEvent, crate::time::TimePresenter)> for AccountCo
                     "stream": stream,
                     "store": store
                 }
-            }),
+                });
+                if let Some(effort) = reasoning_effort {
+                    event["payload"]["reasoning"] = serde_json::json!({ "effort": effort });
+                }
+                event
+            }
             DomainConnectionTestEvent::Content { text } => {
                 serde_json::json!({ "type": "content", "text": text })
             }

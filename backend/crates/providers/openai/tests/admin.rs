@@ -1003,26 +1003,41 @@ async fn openai_admin_provider_projects_cached_quota_models_and_canonical_export
     .expect("OpenAI bundle");
     let admin = bundle.admin_provider();
 
-    let operation = admin
-        .connection_test_operation(
-            &UpstreamModelId::new("gpt-5.4").expect("upstream model"),
-            "Reply with exactly OK.",
-        )
-        .await
-        .expect("connection test operation");
-    let Operation::Generate(request) = operation else {
-        panic!("connection test must be a generate operation");
-    };
-    let encoded = provider_openai::encode_generate_request(&request, "gpt-5.4", None)
-        .expect("official OpenAI request");
-    assert_eq!(
-        encoded.body().get("model").and_then(Value::as_str),
-        Some("gpt-5.4")
-    );
-    assert_eq!(
-        encoded.body().get("stream").and_then(Value::as_bool),
-        Some(true)
-    );
+    for (prompt, effort) in [
+        ("Reply with exactly OK.", None),
+        ("请解释\n1 + 1", Some("high")),
+    ] {
+        let operation = admin
+            .connection_test_operation(
+                &UpstreamModelId::new("gpt-5.4").expect("upstream model"),
+                prompt,
+                effort,
+            )
+            .await
+            .expect("connection test operation");
+        let Operation::Generate(request) = operation else {
+            panic!("connection test must be a generate operation");
+        };
+        let encoded = provider_openai::encode_generate_request(&request, "gpt-5.4", None)
+            .expect("official OpenAI request");
+        assert_eq!(
+            encoded.body().get("model").and_then(Value::as_str),
+            Some("gpt-5.4")
+        );
+        assert_eq!(
+            encoded.body().get("stream").and_then(Value::as_bool),
+            Some(true)
+        );
+        assert_eq!(encoded.body()["input"][0]["content"][0]["text"], prompt);
+        assert_eq!(
+            encoded
+                .body()
+                .get("reasoning")
+                .and_then(|value| value.get("effort"))
+                .and_then(Value::as_str),
+            effort
+        );
+    }
 
     let account_id = account.id().clone();
     let quota = admin

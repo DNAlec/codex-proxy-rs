@@ -547,8 +547,9 @@ mod actions {
         AccountActionRequest, AccountConnectionTestEvent, AccountDeletionData,
         AccountDeletionRequest, AccountExportData, AccountExportQuery, AccountIdQuery,
         AccountImportData, AccountImportRequest, AccountMutationData, AccountRefreshRequest,
-        AccountResetCreditConsumeRequest, AccountTestQuery, CompleteAccountAuthorizationRequest,
-        StartAccountAuthorizationRequest, UpdateAccountRequest,
+        AccountResetCreditConsumeRequest, AccountTestQuery, AccountTestRequest,
+        CompleteAccountAuthorizationRequest, StartAccountAuthorizationRequest,
+        UpdateAccountRequest,
     };
     use gateway_core::{
         account::ProviderAccountId, engine::probe::AccountProbeErrorSource,
@@ -878,6 +879,51 @@ mod actions {
     }
 
     #[test]
+    fn connection_test_request_validates_prompt_and_optional_effort() {
+        for (prompt, effort, error_field) in [
+            ("请解释\n1 + 1", Some("high"), None),
+            ("OK", None, None),
+            (" \n\t", None, Some("prompt")),
+            ("OK", Some(""), Some("reasoningEffort")),
+            ("OK", Some("high\n"), Some("reasoningEffort")),
+        ] {
+            let request: AccountTestRequest = serde_json::from_value(json!({
+                "accountId": "acct_connection_test",
+                "modelId": "gpt-test",
+                "prompt": prompt,
+                "reasoningEffort": effort,
+            }))
+            .unwrap();
+            assert_eq!(
+                request
+                    .validate()
+                    .err()
+                    .map(|error| error.field().to_owned()),
+                error_field.map(str::to_owned)
+            );
+        }
+    }
+
+    #[test]
+    fn connection_test_event_reports_custom_prompt_and_effort() {
+        let event = AccountConnectionTestEvent::from((
+            DomainConnectionTestEvent::Request {
+                model: "gpt-test".to_owned(),
+                input_text: "请解释\n1 + 1".to_owned(),
+                reasoning_effort: Some("high".to_owned()),
+                stream: true,
+                store: false,
+            },
+            gateway_api::TimePresenter::new(Default::default()),
+        ));
+        assert_eq!(
+            event.data["payload"]["input"][0]["content"][0]["text"],
+            "请解释\n1 + 1"
+        );
+        assert_eq!(event.data["payload"]["reasoning"]["effort"], "high");
+    }
+
+    #[test]
     fn connection_test_events_should_preserve_the_existing_frontend_contract() {
         let mut events = [
             DomainConnectionTestEvent::Started {
@@ -886,6 +932,7 @@ mod actions {
             DomainConnectionTestEvent::Request {
                 model: "grok-4.5".to_owned(),
                 input_text: "Reply with exactly OK.".to_owned(),
+                reasoning_effort: None,
                 stream: true,
                 store: false,
             },

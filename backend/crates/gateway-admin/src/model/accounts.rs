@@ -263,6 +263,22 @@ pub struct DeleteAccounts {
     pub account_ids: Vec<String>,
 }
 
+/// 手动连接测试参数；后台探测使用默认值，不共享页面输入
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AccountConnectionTestOptions {
+    pub input_text: String,
+    pub reasoning_effort: Option<String>,
+}
+
+impl Default for AccountConnectionTestOptions {
+    fn default() -> Self {
+        Self {
+            input_text: "Reply with exactly OK.".to_owned(),
+            reasoning_effort: None,
+        }
+    }
+}
+
 /// 账号连接测试的语义事件
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AccountConnectionTestEvent {
@@ -272,6 +288,7 @@ pub enum AccountConnectionTestEvent {
     Request {
         model: String,
         input_text: String,
+        reasoning_effort: Option<String>,
         stream: bool,
         store: bool,
     },

@@ -337,12 +337,14 @@ impl ProviderAdmin for FakeProviderAdmin {
         &self,
         model: &gateway_core::routing::UpstreamModelId,
         input: &str,
+        reasoning_effort: Option<&str>,
     ) -> Result<gateway_core::operation::Operation, ProviderAdminError> {
         let payload = ProtocolPayload::json_object(
             "openai",
             Map::from_iter([
                 ("model".to_owned(), json!(model.as_str())),
                 ("input".to_owned(), json!(input)),
+                ("reasoning".to_owned(), json!({"effort": reasoning_effort})),
                 ("stream".to_owned(), json!(true)),
                 ("store".to_owned(), json!(false)),
             ]),
@@ -1337,6 +1339,55 @@ fn provider_registry_should_reject_duplicate_kind() {
 }
 
 #[tokio::test]
+async fn connection_test_passes_custom_options_to_provider_and_probe() {
+    struct InspectingProbe;
+    impl AccountProbe for InspectingProbe {
+        fn probe(
+            &self,
+            request: AccountProbeRequest,
+            _: Option<Arc<gateway_core::routing::RuntimeSnapshot>>,
+        ) -> BoxFuture<'_, Result<AccountProbeResult, AccountProbeError>> {
+            Box::pin(async move {
+                let gateway_core::operation::Operation::Generate(request) = request.operation
+                else {
+                    panic!("generate request")
+                };
+                let body = request.protocol_payload().body();
+                assert_eq!(body["input"], "请解释\n1 + 1");
+                assert_eq!(body["reasoning"]["effort"], "high");
+                Ok(AccountProbeResult {
+                    text: vec!["2".to_owned()],
+                })
+            })
+        }
+    }
+    let services = accounts_service_with_probe(
+        FakeProviderAdmin::new("openai", events()),
+        FakeAccountStore::new("openai", events()),
+        Arc::new(InspectingProbe),
+    )
+    .await;
+    let events = services
+        .accounts()
+        .test_connection(
+            ProviderAccountId::new("acct_test").unwrap(),
+            gateway_core::routing::UpstreamModelId::new("gpt-test").unwrap(),
+            gateway_admin::model::accounts::AccountConnectionTestOptions {
+                input_text: "请解释\n1 + 1".to_owned(),
+                reasoning_effort: Some("high".to_owned()),
+            },
+        )
+        .await
+        .unwrap()
+        .collect::<Vec<_>>()
+        .await;
+    assert!(matches!(
+        events.last(),
+        Some(AccountConnectionTestEvent::Completed)
+    ));
+}
+
+#[tokio::test]
 async fn connection_test_should_probe_unavailable_account() {
     let provider = FakeProviderAdmin::new("xai", events());
     let mut account = account_record("xai");
@@ -1354,6 +1405,7 @@ async fn connection_test_should_probe_unavailable_account() {
         .test_connection(
             ProviderAccountId::new("acct_test").expect("account ID"),
             gateway_core::routing::UpstreamModelId::new("grok-4.5").expect("model"),
+            Default::default(),
         )
         .await
         .expect("connection test stream")
@@ -1391,6 +1443,7 @@ async fn connection_test_rate_limited_probe_returns_provider_failure() {
         .test_connection(
             ProviderAccountId::new("acct_test").expect("account ID"),
             gateway_core::routing::UpstreamModelId::new("grok-4.5").expect("model"),
+            Default::default(),
         )
         .await
         .expect("connection test stream")
@@ -1424,6 +1477,7 @@ async fn connection_test_should_preserve_disabled_account_status() {
         .test_connection(
             ProviderAccountId::new("acct_test").expect("account ID"),
             gateway_core::routing::UpstreamModelId::new("grok-4.5").expect("model"),
+            Default::default(),
         )
         .await
         .expect("connection test stream")

@@ -1147,6 +1147,7 @@ fn is_week_window(seconds: u64) -> bool {
 pub struct ProviderModel {
     pub id: UpstreamModelId,
     pub name: String,
+    pub reasoning_efforts: Vec<String>,
 }
 
 /// Provider 实时模型目录

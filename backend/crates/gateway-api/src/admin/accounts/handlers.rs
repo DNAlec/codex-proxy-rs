@@ -64,7 +64,7 @@ where
         )
         .route(
             "/api/admin/accounts/connection-test",
-            get(test_account_connection::<S>),
+            get(test_account_connection::<S>).post(test_account_connection_with_options::<S>),
         )
         .route(
             "/api/admin/accounts/oauth/start",
@@ -619,12 +619,36 @@ async fn test_account_connection<S>(
 where
     S: SessionState + Send + Sync,
 {
-    let time = crate::time::TimePresenter::new(state.admin_services().timezone());
     let (account_id, upstream_model) = query.into_command().map_err(map_wire_error)?;
+    connection_test_stream(state, account_id, upstream_model, Default::default()).await
+}
+
+async fn test_account_connection_with_options<S>(
+    _auth: AdminAuth,
+    State(state): State<S>,
+    AdminJson(request): AdminJson<AccountTestRequest>,
+) -> Result<Sse<impl Stream<Item = Result<Event, Infallible>>>, AdminError>
+where
+    S: SessionState + Send + Sync,
+{
+    let (account_id, upstream_model, options) = request.into_command().map_err(map_wire_error)?;
+    connection_test_stream(state, account_id, upstream_model, options).await
+}
+
+async fn connection_test_stream<S>(
+    state: S,
+    account_id: ProviderAccountId,
+    upstream_model: UpstreamModelId,
+    options: AccountConnectionTestOptions,
+) -> Result<Sse<impl Stream<Item = Result<Event, Infallible>>>, AdminError>
+where
+    S: SessionState + Send + Sync,
+{
+    let time = crate::time::TimePresenter::new(state.admin_services().timezone());
     let stream = state
         .admin_services()
         .accounts()
-        .test_connection(account_id, upstream_model)
+        .test_connection(account_id, upstream_model, options)
         .await
         .map_err(map_service_error)?
         .map(move |event| {

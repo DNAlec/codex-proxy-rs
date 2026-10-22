@@ -31,6 +31,7 @@ const MAX_CATALOG_FETCH_ATTEMPTS: usize = 3;
 pub struct GrokCredentialCatalogSeed {
     etag: Option<String>,
     model_slugs: Vec<String>,
+    reasoning_efforts: BTreeMap<String, Vec<String>>,
 }
 
 impl GrokCredentialCatalogSeed {
@@ -54,19 +55,45 @@ impl GrokCredentialCatalogSeed {
             .map(|value| validate_etag(&value))
             .transpose()
             .map_err(|_| GrokCredentialCatalogError::InvalidCredentialData)?;
-        Ok(Self { etag, model_slugs })
+        Ok(Self {
+            etag,
+            model_slugs,
+            reasoning_efforts: BTreeMap::new(),
+        })
     }
 
     fn from_snapshot(
         snapshot: &GrokModelCatalogSnapshot,
     ) -> Result<Self, GrokCredentialCatalogError> {
-        Self::new(
+        let mut seed = Self::new(
             snapshot
                 .models()
                 .iter()
                 .map(|model| model.request_model().as_str()),
             snapshot.etag().map(str::to_owned),
-        )
+        )?;
+        seed.reasoning_efforts = snapshot
+            .models()
+            .iter()
+            .map(|model| {
+                (
+                    model.request_model().as_str().to_owned(),
+                    model
+                        .capabilities()
+                        .reasoning_efforts()
+                        .iter()
+                        .map(|effort| effort.as_str().to_owned())
+                        .collect(),
+                )
+            })
+            .collect();
+        Ok(seed)
+    }
+
+    /// 返回该套餐目录声明的思考档位，缺失时不推断模型能力
+    #[must_use]
+    pub fn reasoning_efforts(&self, model: &str) -> &[String] {
+        self.reasoning_efforts.get(model).map_or(&[], Vec::as_slice)
     }
 
     #[must_use]
@@ -225,6 +252,10 @@ impl GrokCatalogCache {
                     .collect(),
             ),
         );
+        document.insert(
+            "reasoningEfforts".to_owned(),
+            serde_json::json!(catalog.seed().reasoning_efforts),
+        );
         OpaqueProviderData::new(document)
     }
 
@@ -267,11 +298,18 @@ impl GrokCatalogCache {
                     .ok_or(GrokCatalogCacheError::InvalidData)
             })
             .collect::<Result<Vec<_>, _>>()?;
+        let reasoning_efforts = fields
+            .remove("reasoningEfforts")
+            .map(serde_json::from_value)
+            .transpose()
+            .map_err(|_| GrokCatalogCacheError::InvalidData)?
+            .unwrap_or_default();
         if !fields.is_empty() {
             return Err(GrokCatalogCacheError::InvalidData);
         }
-        let seed = GrokCredentialCatalogSeed::new(models, etag)
+        let mut seed = GrokCredentialCatalogSeed::new(models, etag)
             .map_err(|_| GrokCatalogCacheError::InvalidData)?;
+        seed.reasoning_efforts = reasoning_efforts;
         Ok(GrokPlanCatalog::new(scope.clone(), observed_at, seed))
     }
 }

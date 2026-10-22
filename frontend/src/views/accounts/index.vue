@@ -138,6 +138,9 @@ const {
   refreshingConnectionTestModels,
   connectionTestSelectedModel,
   connectionTestModelOptions,
+  connectionTestPrompt,
+  connectionTestReasoningEffort,
+  connectionTestReasoningOptions,
   connectionTestStatusView,
   openConnectionTest,
   handleRefreshConnectionTestModels,
@@ -381,6 +384,9 @@ const {
     <AccountConnectionTestModal
       v-model="showConnectionTestModal"
       v-model:selected-model="connectionTestSelectedModel"
+      v-model:prompt="connectionTestPrompt"
+      v-model:reasoning-effort="connectionTestReasoningEffort"
+      :reasoning-options="connectionTestReasoningOptions"
       :account="testingAccount"
       :duration-ms="connectionTestDurationMs"
       :error="connectionTestError"

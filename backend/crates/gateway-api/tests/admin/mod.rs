@@ -212,7 +212,7 @@ impl AdminTestFixture {
                 providers: gateway_admin::ports::provider::ProviderAdminRegistry::new(providers)
                     .unwrap(),
                 snapshot: Arc::new(NoopSnapshot),
-                account_probe: Arc::new(NoopProbe),
+                account_probe: Arc::new(SuccessfulAccountProbe),
                 proxy_probe: Arc::new(proxies::SuccessfulProbe),
                 client_distribution: Arc::new(StaticClientDistribution),
                 system,
@@ -1620,10 +1620,20 @@ impl ProviderAdmin for UnusedProvider {
 
     async fn connection_test_operation(
         &self,
-        _: &gateway_core::routing::UpstreamModelId,
-        _: &str,
+        model: &gateway_core::routing::UpstreamModelId,
+        input: &str,
+        reasoning_effort: Option<&str>,
     ) -> Result<gateway_core::operation::Operation, ProviderAdminError> {
-        Err(unsupported_provider())
+        use gateway_core::operation::{GenerateRequest, Operation, ProtocolPayload};
+        let body = serde_json::json!({
+            "model": model.as_str(), "input": input,
+            "reasoning": { "effort": reasoning_effort },
+        });
+        let payload =
+            ProtocolPayload::json_object("openai", body.as_object().unwrap().clone()).unwrap();
+        Ok(Operation::Generate(GenerateRequest::from_protocol_payload(
+            payload,
+        )))
     }
 
     fn dashboard_wire_profile(
@@ -1723,15 +1733,19 @@ impl SnapshotControl for NoopSnapshot {
     }
 }
 
-struct NoopProbe;
+struct SuccessfulAccountProbe;
 
-impl AccountProbe for NoopProbe {
+impl AccountProbe for SuccessfulAccountProbe {
     fn probe(
         &self,
         _: AccountProbeRequest,
         _: Option<Arc<gateway_core::routing::RuntimeSnapshot>>,
     ) -> BoxFuture<'_, Result<AccountProbeResult, AccountProbeError>> {
-        Box::pin(async { panic!("unused account probe") })
+        Box::pin(async {
+            Ok(AccountProbeResult {
+                text: vec!["OK".to_owned()],
+            })
+        })
     }
 }
 

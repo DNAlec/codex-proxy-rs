@@ -504,30 +504,45 @@ async fn xai_admin_provider_projects_cached_quota_models_and_canonical_export() 
     .expect("xAI bundle");
     let admin = bundle.admin_provider();
 
-    let operation = admin
-        .connection_test_operation(
-            &UpstreamModelId::new("grok-4.5").expect("upstream model"),
-            "Reply with exactly OK.",
+    for (prompt, effort) in [
+        ("Reply with exactly OK.", None),
+        ("请解释\n1 + 1", Some("high")),
+    ] {
+        let operation = admin
+            .connection_test_operation(
+                &UpstreamModelId::new("grok-4.5").expect("upstream model"),
+                prompt,
+                effort,
+            )
+            .await
+            .expect("connection test operation");
+        let Operation::Generate(request) = operation else {
+            panic!("connection test must be a generate operation");
+        };
+        let encoded = provider_xai::GrokResponsesRequest::encode(
+            &request,
+            "grok-4.5",
+            &ClientApiKeyId::new("admin_connection_test").expect("client key"),
         )
-        .await
-        .expect("connection test operation");
-    let Operation::Generate(request) = operation else {
-        panic!("connection test must be a generate operation");
-    };
-    let encoded = provider_xai::GrokResponsesRequest::encode(
-        &request,
-        "grok-4.5",
-        &ClientApiKeyId::new("admin_connection_test").expect("client key"),
-    )
-    .expect("official xAI request");
-    assert_eq!(
-        encoded.body().get("model").and_then(Value::as_str),
-        Some("grok-4.5")
-    );
-    assert_eq!(
-        encoded.body().get("stream").and_then(Value::as_bool),
-        Some(true)
-    );
+        .expect("official xAI request");
+        assert_eq!(
+            encoded.body().get("model").and_then(Value::as_str),
+            Some("grok-4.5")
+        );
+        assert_eq!(
+            encoded.body().get("stream").and_then(Value::as_bool),
+            Some(true)
+        );
+        assert_eq!(encoded.body()["input"][0]["content"][0]["text"], prompt);
+        assert_eq!(
+            encoded
+                .body()
+                .get("reasoning")
+                .and_then(|value| value.get("effort"))
+                .and_then(Value::as_str),
+            effort
+        );
+    }
 
     let quota = admin
         .quota(ProviderQuotaRequest {

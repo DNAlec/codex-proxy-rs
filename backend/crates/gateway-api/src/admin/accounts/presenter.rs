@@ -53,6 +53,7 @@ pub(super) fn account_models_data(result: ProviderModels) -> AccountModelsData {
                 AccountModelView {
                     label: id.clone(),
                     id,
+                    reasoning_efforts: model.reasoning_efforts,
                 }
             })
             .collect(),

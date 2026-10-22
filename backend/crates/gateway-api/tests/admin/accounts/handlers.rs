@@ -10,6 +10,47 @@ use tower::ServiceExt as _;
 use super::super::{AdminTestFixture, AdminTestState};
 
 #[tokio::test]
+async fn connection_test_post_streams_custom_options_and_get_uses_defaults() {
+    use chrono::Utc;
+    use gateway_core::account::{AccountStatusFacts, CredentialState, QuotaState};
+    let fixture = AdminTestFixture::new().await;
+    fixture.auth.insert_session("valid-session");
+    let facts = AccountStatusFacts {
+        enabled: true,
+        credential_state: CredentialState::Ready,
+        access_token_expires_at: None,
+        quota: QuotaState::unknown(),
+        cooldown: None,
+        last_error_reason: None,
+        last_error_message: None,
+    };
+    *fixture.account.lock().unwrap() = Some(account_page_item(facts, Utc::now(), "oauth"));
+    for (method, uri, body, prompt, effort) in [
+        ("POST", "/api/admin/accounts/connection-test", serde_json::json!({
+            "accountId": "acct_cooldown", "modelId": "gpt-test", "prompt": "请解释\n1 + 1", "reasoningEffort": "high"
+        }).to_string(), "请解释\n1 + 1", Some("high")),
+        ("GET", "/api/admin/accounts/connection-test?accountId=acct_cooldown&modelId=gpt-test", String::new(), "Reply with exactly OK.", None),
+    ] {
+        let response = admin::accounts::router::<AdminTestState>().with_state(fixture.state()).oneshot(
+            Request::builder().method(method).uri(uri)
+                .header("x-request-id", "req_connection_test")
+                .header(header::COOKIE, "cpr_session=valid-session")
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(body)).unwrap(),
+        ).await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        assert!(response.headers()[header::CONTENT_TYPE].to_str().unwrap().starts_with("text/event-stream"));
+        let body = to_bytes(response.into_body(), 32768).await.unwrap();
+        let body = std::str::from_utf8(&body).unwrap();
+        let events: Vec<serde_json::Value> = body.lines().filter_map(|line| line.strip_prefix("data: ")).map(|data| serde_json::from_str(data).unwrap()).collect();
+        let request = events.iter().find(|event| event["type"] == "request").unwrap();
+        assert_eq!(request["payload"]["input"][0]["content"][0]["text"], prompt);
+        assert_eq!(request["payload"]["reasoning"]["effort"].as_str(), effort);
+        assert_eq!(events.last().unwrap()["type"], "test_complete");
+    }
+}
+
+#[tokio::test]
 async fn account_proxy_binding_is_distinct_from_the_redacted_endpoint() {
     use chrono::Utc;
     use gateway_core::account::{AccountStatusFacts, CredentialState, OutboundProxy, QuotaState};

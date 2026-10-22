@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { useAccountConnectionTest } from '../composables/useAccountConnectionTest'
 
-import { ZButton, ZDialog, ZIconButton, ZSelect } from '@codex-proxy/ui'
+import { ZButton, ZDialog, ZFormItem, ZIconButton, ZSelect, ZTextarea } from '@codex-proxy/ui'
 import { RefreshCw } from '@lucide/vue'
 import AccountStatusBadge from './account-status-badge/index.vue'
 import AccountIdentityCell from './AccountIdentityCell.vue'
@@ -20,6 +20,7 @@ defineProps<{
   loadingModels: boolean
   refreshingModels: boolean
   modelOptions: ConnectionTest['connectionTestModelOptions']['value']
+  reasoningOptions: ConnectionTest['connectionTestReasoningOptions']['value']
   statusView: ConnectionTest['connectionTestStatusView']['value']
 }>()
 
@@ -29,6 +30,8 @@ const emit = defineEmits<{
 }>()
 const open = defineModel<boolean>({ default: false })
 const selectedModel = defineModel<string>('selectedModel', { required: true })
+const prompt = defineModel<string>('prompt', { required: true })
+const reasoningEffort = defineModel<string>('reasoningEffort', { required: true })
 
 function connectionLogClass(tone: string) {
   if (tone === 'success')
@@ -67,7 +70,7 @@ function connectionLogClass(tone: string) {
         />
       </section>
 
-      <section class="rounded-cp-card bg-cp-fill-quaternary px-4 py-3">
+      <section class="flex flex-col gap-3 rounded-cp-card bg-cp-fill-quaternary px-4 py-3">
         <div class="grid gap-2">
           <div class="flex min-h-8 items-center justify-between gap-3">
             <span class="text-cp-sm font-heavy text-cp-text-quaternary">
@@ -95,6 +98,26 @@ function connectionLogClass(tone: string) {
             empty-text="上游没有返回模型"
           />
         </div>
+        <ZFormItem label="思考强度">
+          <ZSelect
+            v-model="reasoningEffort"
+            aria-label="思考强度"
+            :options="reasoningOptions"
+            :disabled="status === 'running' || loadingModels || refreshingModels"
+          />
+          <p v-if="!loadingModels && reasoningOptions.length === 1" class="mt-1 text-cp-xs text-cp-text-quaternary">
+            模型目录未提供可选档位，使用默认行为
+          </p>
+        </ZFormItem>
+        <ZFormItem label="测试提示词">
+          <ZTextarea
+            v-model="prompt"
+            aria-label="测试提示词"
+            placeholder="输入测试用的提示词"
+            :rows="3"
+            :disabled="status === 'running'"
+          />
+        </ZFormItem>
       </section>
 
       <section class="rounded-cp-card bg-cp-fill-quaternary p-4">
@@ -217,7 +240,7 @@ function connectionLogClass(tone: string) {
       <ZButton
         type="primary"
         :loading="status === 'running'"
-        :disabled="!account || loadingModels || refreshingModels || !selectedModel"
+        :disabled="!account || loadingModels || refreshingModels || !selectedModel || !prompt.trim()"
         @click="emit('test')"
       >
         {{ logs.length > 0 || error ? '重新测试' : '开始测试' }}

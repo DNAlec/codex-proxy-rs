@@ -408,8 +408,9 @@ impl ProviderAdmin for XaiAdminProvider {
         &self,
         upstream_model: &UpstreamModelId,
         input_text: &str,
+        reasoning_effort: Option<&str>,
     ) -> Result<Operation, ProviderAdminError> {
-        build_connection_test_operation(upstream_model, input_text)
+        build_connection_test_operation(upstream_model, input_text, reasoning_effort)
     }
 
     fn dashboard_wire_profile(&self) -> Option<DashboardWireProfile> {
@@ -840,6 +841,7 @@ impl ProviderAdmin for XaiAdminProvider {
                     id: UpstreamModelId::new(model.clone())
                         .map_err(|_| provider_error(ProviderAdminErrorKind::Internal))?,
                     name: model.clone(),
+                    reasoning_efforts: catalog.seed().reasoning_efforts(model).to_vec(),
                 })
             })
             .collect::<Result<Vec<_>, ProviderAdminError>>()?;
@@ -1436,6 +1438,7 @@ fn provider_error(kind: ProviderAdminErrorKind) -> ProviderAdminError {
 fn build_connection_test_operation(
     upstream_model: &UpstreamModelId,
     input_text: &str,
+    reasoning_effort: Option<&str>,
 ) -> Result<Operation, ProviderAdminError> {
     let mut body = Map::new();
     body.insert(
@@ -1450,6 +1453,12 @@ fn build_connection_test_operation(
             "content": [{"type": "input_text", "text": input_text}]
         }]),
     );
+    if let Some(effort) = reasoning_effort {
+        body.insert(
+            "reasoning".to_owned(),
+            serde_json::json!({ "effort": effort }),
+        );
+    }
     body.insert("stream".to_owned(), Value::Bool(true));
     body.insert("store".to_owned(), Value::Bool(false));
     let payload = ProtocolPayload::json_object("openai", body)

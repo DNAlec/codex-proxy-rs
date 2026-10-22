@@ -2,18 +2,16 @@ import type { Account, AccountModelsResponse } from '@/api'
 import { ZNotification } from '@codex-proxy/ui'
 
 import { CheckCircle2, Clock3, Wifi, XCircle } from '@lucide/vue'
-import { useEventSource } from '@vueuse/core'
 import { clamp } from 'es-toolkit'
 import { computed, onBeforeUnmount, ref, shallowRef, watch } from 'vue'
-import { getAccountModels, refreshAccountModels } from '@/api'
-import { API_BASE_URL } from '@/api/constants'
+import { getAccountModels, refreshAccountModels, testAccountConnection } from '@/api'
 import { useIdSet } from '@/composables/useIdSet'
 import { useRequestState } from '@/composables/useRequestState'
-import { errorMessage, withMinimumDuration } from '@/utils/operation'
+import { errorMessage } from '@/utils/operation'
 
 interface ConnectionTestRun {
   accountId: string
-  resolve: () => void
+  controller: AbortController
 }
 
 type ConnectionTestStatus = 'idle' | 'running' | 'success' | 'error'
@@ -22,6 +20,7 @@ type ConnectionTestLogTone = 'normal' | 'info' | 'success' | 'danger'
 interface ConnectionTestModelOption {
   label: string
   value: string
+  reasoningEfforts: string[]
 }
 
 interface ConnectionTestLog {
@@ -33,6 +32,7 @@ interface ConnectionTestLog {
 }
 
 interface ConnectionTestRequestPayload {
+  reasoning?: { effort?: string }
   input?: Array<{ content?: Array<{ type?: string, text?: string }> }>
 }
 
@@ -171,21 +171,18 @@ export function useAccountConnectionTest(options: { reload: () => Promise<unknow
   const refreshingConnectionTestModels = computed(() => modelsRequest.loading.value && modelsRequestMode.value === 'refresh')
   const connectionTestSelectedModel = shallowRef('')
   const connectionTestModelOptions = ref<ConnectionTestModelOption[]>([])
-  const connectionTestStreamUrl = shallowRef<string>()
-  const {
-    data: connectionTestStreamMessage,
-    error: connectionTestStreamError,
-    eventSource: connectionTestEventSource,
-    open: openConnectionTestEventSource,
-    close: closeConnectionTestEventSource,
-  } = useEventSource(connectionTestStreamUrl, [], {
-    autoConnect: false,
-    immediate: false,
-    withCredentials: true,
-    serializer: {
-      read: raw => ({ raw }),
-    },
-  })
+  const connectionTestPrompt = shallowRef('Reply with exactly OK.')
+  const connectionTestReasoningEffort = shallowRef('')
+  const connectionTestReasoningOptions = computed(() => [
+    { label: '默认（不指定）', value: '' },
+    ...(connectionTestModelOptions.value.find(model => model.value === connectionTestSelectedModel.value)?.reasoningEfforts ?? [])
+      .map(effort => ({ label: effort, value: effort })),
+  ])
+
+  watch(connectionTestReasoningOptions, (options) => {
+    if (!options.some(option => option.value === connectionTestReasoningEffort.value))
+      connectionTestReasoningEffort.value = ''
+  }, { flush: 'sync' })
 
   let connectionTestStartedAtMs = 0
   let connectionTestRun: ConnectionTestRun | undefined
@@ -231,6 +228,8 @@ export function useAccountConnectionTest(options: { reload: () => Promise<unknow
     abortConnectionTest()
     testingAccount.value = account
     connectionTestSelectedModel.value = ''
+    connectionTestPrompt.value = 'Reply with exactly OK.'
+    connectionTestReasoningEffort.value = ''
     connectionTestModelOptions.value = []
     showConnectionTestModal.value = true
     resetConnectionTest()
@@ -321,21 +320,12 @@ export function useAccountConnectionTest(options: { reload: () => Promise<unknow
     )
   }
 
-  function clearConnectionTestRun() {
-    const run = connectionTestRun
+  function clearConnectionTestRun(run = connectionTestRun) {
+    if (!run || run !== connectionTestRun)
+      return
     connectionTestRun = undefined
-    closeConnectionTestEventSource()
-    if (run) {
-      testingConnections.remove(run.accountId)
-      run.resolve()
-    }
-  }
-
-  function failConnectionTest(message = '测试连接失败') {
-    if (connectionTestStatus.value === 'running') {
-      recordConnectionTestFailure('failure', '测试失败', message)
-    }
-    clearConnectionTestRun()
+    run.controller.abort()
+    testingConnections.remove(run.accountId)
   }
 
   function recordConnectionTestFailure(
@@ -358,7 +348,8 @@ export function useAccountConnectionTest(options: { reload: () => Promise<unknow
       return
     }
     if (event.type === 'request') {
-      setConnectionTestLog('request', '发起请求', 'info', connectionTestRequestText(event.payload), event)
+      const effort = event.payload?.reasoning?.effort
+      setConnectionTestLog('request', effort ? `发起请求（思考强度：${effort}）` : '发起请求', 'info', connectionTestRequestText(event.payload), event)
       return
     }
     if (event.type === 'status' && event.text) {
@@ -446,13 +437,11 @@ export function useAccountConnectionTest(options: { reload: () => Promise<unknow
 
   function applyConnectionTestModels(result: AccountModelsResponse, preserveSelection = false) {
     const previousSelection = preserveSelection ? connectionTestSelectedModel.value : ''
-    connectionTestModelOptions.value = []
-    for (const model of result.models ?? []) {
-      connectionTestModelOptions.value.push({
-        label: model.label || model.id,
-        value: model.id,
-      })
-    }
+    connectionTestModelOptions.value = (result.models ?? []).map(model => ({
+      label: model.label || model.id,
+      value: model.id,
+      reasoningEfforts: model.reasoningEfforts,
+    }))
     connectionTestSelectedModel.value = connectionTestModelOptions.value.some(
       model => model.value === previousSelection,
     )
@@ -473,6 +462,10 @@ export function useAccountConnectionTest(options: { reload: () => Promise<unknow
       connectionTestError.value = '请先选择测试模型'
       return
     }
+    if (!connectionTestPrompt.value.trim()) {
+      connectionTestError.value = '请输入测试提示词'
+      return
+    }
     if (testingConnections.has(account.id))
       return
     abortConnectionTest()
@@ -488,54 +481,72 @@ export function useAccountConnectionTest(options: { reload: () => Promise<unknow
     connectionTestFinishedAt.value = ''
     appendConnectionTestLog('准备发送测试请求', 'info')
     testingConnections.add(account.id)
+    const run: ConnectionTestRun = { accountId: account.id, controller: new AbortController() }
+    connectionTestRun = run
     try {
-      await withMinimumDuration(
-        () =>
-          new Promise<void>((resolve) => {
-            connectionTestRun = {
-              accountId: account.id,
-              resolve,
-            }
-            const params = new URLSearchParams({
-              accountId: account.id,
-              modelId: connectionTestSelectedModel.value,
-            })
-            connectionTestStreamUrl.value
-              = `${API_BASE_URL}/api/admin/accounts/connection-test?${params}`
-            openConnectionTestEventSource()
-            if (!connectionTestEventSource.value)
-              failConnectionTest('当前浏览器不支持连接测试')
-          }),
-      )
-      if (connectionTestStatus.value === 'running') {
+      const response = await testAccountConnection({
+        accountId: account.id,
+        modelId: connectionTestSelectedModel.value,
+        prompt: connectionTestPrompt.value,
+        reasoningEffort: connectionTestReasoningEffort.value || undefined,
+      }, { signal: run.controller.signal, silent: true })
+      await readConnectionTestStream(response, run)
+      if (connectionTestRun === run && connectionTestStatus.value === 'running')
         recordConnectionTestFailure('failure', '测试失败', '测试连接未返回完成事件')
-      }
     }
     catch (error: unknown) {
-      recordConnectionTestFailure('failure', '测试失败', errorMessage(error, '测试连接失败'))
+      if (connectionTestRun === run)
+        recordConnectionTestFailure('failure', '测试失败', errorMessage(error, '测试连接失败'))
     }
     finally {
-      clearConnectionTestRun()
+      clearConnectionTestRun(run)
     }
   }
 
-  watch(connectionTestStreamMessage, (message) => {
-    if (!message?.raw || !connectionTestRun)
-      return
+  async function readConnectionTestStream(response: Response, run: ConnectionTestRun) {
+    const reader = response.body?.getReader()
+    if (!reader)
+      throw new Error('测试连接未返回响应流')
+    const decoder = new TextDecoder()
+    let buffer = ''
     try {
-      const event = parseConnectionTestEvent(message.raw)
-      if (event)
-        handleConnectionTestEvent(event)
+      for (;;) {
+        if (connectionTestRun !== run)
+          break
+        const { done, value } = await reader.read()
+        if (done || connectionTestRun !== run)
+          break
+        buffer += decoder.decode(value, { stream: true })
+        let boundary = buffer.match(/\r?\n\r?\n/)
+        while (boundary?.index !== undefined) {
+          if (connectionTestRun !== run)
+            return
+          const frame = buffer.slice(0, boundary.index)
+          buffer = buffer.slice(boundary.index + boundary[0].length)
+          const data = frame.split(/\r?\n/)
+            .filter(line => line.startsWith('data:'))
+            .map(line => line.slice(5).replace(/^ /, ''))
+            .join('\n')
+          if (data) {
+            let event: ConnectionTestEvent | null
+            try {
+              event = parseConnectionTestEvent(data)
+            }
+            catch {
+              throw new Error('测试响应解析失败')
+            }
+            if (event)
+              handleConnectionTestEvent(event)
+          }
+          boundary = buffer.match(/\r?\n\r?\n/)
+        }
+      }
     }
-    catch {
-      failConnectionTest('测试响应解析失败')
+    finally {
+      await reader.cancel().catch(() => {})
+      reader.releaseLock()
     }
-  })
-
-  watch(connectionTestStreamError, (error) => {
-    if (error && connectionTestRun)
-      failConnectionTest('测试连接已断开')
-  })
+  }
 
   watch([showConnectionTestModal, () => testingAccount.value?.id], ([open]) => {
     modelsRequest.invalidate({ resetLoading: open })
@@ -563,6 +574,9 @@ export function useAccountConnectionTest(options: { reload: () => Promise<unknow
     refreshingConnectionTestModels,
     connectionTestSelectedModel,
     connectionTestModelOptions,
+    connectionTestPrompt,
+    connectionTestReasoningEffort,
+    connectionTestReasoningOptions,
     connectionTestStatusView,
     openConnectionTest,
     handleRefreshConnectionTestModels,

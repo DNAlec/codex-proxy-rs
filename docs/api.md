@@ -739,7 +739,7 @@ config 返回 `{ name, plaintextKey }`，仅读取服务端会话绑定的当前
 | `GET` | `/api/admin/accounts/models` | `accountId` | 优先读取该 Provider + 套餐的模型 cache，缺失时有限实时拉取 |
 | `GET` | `/api/admin/accounts/models/catalog` | `accountId` | 读取指定账号的完整 Codex 原生模型目录，返回 `{ modelCount, observedAt, catalog }` |
 | `POST` | `/api/admin/accounts/models/refresh` | `{ accountId }` | 强制拉取最新模型并覆盖 cache |
-| `GET` | `/api/admin/accounts/connection-test` | `accountId`、`modelId` | 通过 SSE 返回实时连接测试事件，不作为业务 Responses 用量记录 |
+| `GET` / `POST` | `/api/admin/accounts/connection-test` | GET：`accountId`、`modelId`；POST 正文增加 `prompt`、可选 `reasoningEffort` | 通过 SSE 返回实时连接测试事件，不作为业务 Responses 用量记录 |
 | `POST` | `/api/admin/accounts/oauth/start` | `{ provider, name, accountId?, outboundProxyId?, outboundProxyUrl? }` | 为支持登录的 Provider 创建 flow；`accountId` 表示重新授权 |
 | `POST` | `/api/admin/accounts/oauth/complete` | `{ provider, flowId, callbackUrl, settings? }` | 消费 OAuth callback；首次授权可附带账号设置，重新授权保留原设置 |
 
@@ -925,7 +925,24 @@ OAuth 等待回调期间不持有保护；提交仍拒绝已删除或连接配�
 
 ### 账号连接测试 SSE
 
-`GET /api/admin/accounts/connection-test` 固定探测请求指定的账号，不参与普通账号轮换。成功流沿用
+`POST /api/admin/accounts/connection-test` 固定探测请求指定的账号，不参与普通账号轮换，请求正文为：
+
+```json
+{
+  "accountId": "账号 ID",
+  "modelId": "上游模型 ID",
+  "prompt": "Reply with exactly OK.",
+  "reasoningEffort": "high"
+}
+```
+
+- `prompt` 必填且不能全为空白，保留原始文本与换行
+- `reasoningEffort` 可省略或为 `null`，表示不指定；显式选择会传入上游 `reasoning.effort`
+- 账号模型查询与刷新结果的每个模型包含 `reasoningEfforts`，来自对应套餐目录，空数组表示目录未提供可选档位；已有缓存可通过刷新更新
+- 参数仅用于当前手动测试，不保存到账号配置，也不影响自动解冻探测
+- `GET /api/admin/accounts/connection-test?accountId=...&modelId=...` 使用默认提示词 `Reply with exactly OK.`，不指定思考强度
+
+两种方法均返回 SSE，`request` 事件包含本次提示词与显式指定的思考强度。成功流使用
 `test_start`、`request`、`content`、`test_complete` 事件；失败事件为：
 
 ```json

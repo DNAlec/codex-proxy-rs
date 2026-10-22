@@ -513,8 +513,15 @@ async fn plan_catalog_cache_is_shared_and_manual_refresh_replaces_it() {
 
     assert_eq!(initial.models(), ["gpt-5.4"]);
     assert_eq!(cached.models(), ["gpt-5.4"]);
+    assert_eq!(
+        cached.reasoning_efforts("gpt-5.4"),
+        initial.reasoning_efforts("gpt-5.4")
+    );
+    assert!(!cached.reasoning_efforts("gpt-5.4").is_empty());
     assert_eq!(refreshed.models(), ["gpt-5.5"]);
     assert_eq!(replaced.models(), ["gpt-5.5"]);
+    assert!(replaced.reasoning_efforts("gpt-5.5").is_empty());
+    assert!(replaced.reasoning_efforts("gpt-5.4").is_empty());
     assert_eq!(calls.load(Ordering::SeqCst), 2);
     server.verify().await;
 }

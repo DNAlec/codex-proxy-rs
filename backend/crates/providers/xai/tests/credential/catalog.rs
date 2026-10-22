@@ -183,6 +183,10 @@ async fn single_account_catalog_refresh_and_read_use_provider_cache_boundary() {
         .expect("read cache")
         .expect("cached catalog");
     assert_eq!(cached.seed().models(), ["grok-4.5"]);
+    assert_eq!(
+        cached.seed().reasoning_efforts("grok-4.5"),
+        ["low", "medium", "high", "xhigh"]
+    );
 }
 
 #[tokio::test]
