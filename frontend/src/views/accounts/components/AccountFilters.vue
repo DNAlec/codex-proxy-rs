@@ -94,7 +94,7 @@ const groupOptions = computed(() => [
         @click="emit('editSelected')"
       >
         <Pencil class="size-4 text-cp-link" />
-        {{ t('accounts.batchEdit.title') }}
+        {{ t('accounts.filters.editSelected', { count: selectedCount }) }}
       </ZButton>
       <ZButton
         v-if="selectedCount > 0"
@@ -122,7 +122,7 @@ const groupOptions = computed(() => [
         {{ t('accounts.filters.exportSelected', { count: selectedCount }) }}
       </ZButton>
       <div
-        class="col-span-2 flex min-w-0 items-center justify-end gap-2"
+        class="col-span-2 flex min-w-0 flex-wrap items-center justify-end gap-2"
         :class="selectedCount > 0 ? 'w-full xl:w-auto' : 'justify-self-end'"
       >
         <ZButton v-if="hasImportTasks" class="whitespace-nowrap" @click="emit('importTasks')">
