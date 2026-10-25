@@ -78,7 +78,7 @@ export function accountImportModes(provider: string | undefined) {
   if (provider === 'openai') {
     return [
       { label: 'OAuth', value: 'oauth' as const },
-      { label: 'API Key', value: 'api_key' as const },
+      { label: t('common.fields.apiKey'), value: 'api_key' as const },
       { label: 'AT', value: 'access_token' as const },
       { label: 'RT', value: 'refresh_token' as const },
       { label: t('accounts.onboarding.accountFile'), value: 'json' as const },

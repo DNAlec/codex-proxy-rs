@@ -34,7 +34,7 @@ export function formatAuthenticationLabel(value?: string | null) {
   const normalized = value?.trim()
   switch (normalized?.toLowerCase()) {
     case 'oauth': return 'OAuth'
-    case 'api_key': return 'API Key'
+    case 'api_key': return t('common.fields.apiKey')
     default: return normalized ? t('common.providers.customAuth', { normalized }) : t('common.providers.unknownAuth')
   }
 }

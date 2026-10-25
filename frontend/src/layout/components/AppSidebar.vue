@@ -6,6 +6,7 @@ import { ZIconButton, ZMotionIcon, ZPopover, ZScrollbar } from '@codex-proxy/ui'
 import {
   ArrowUpCircle,
   Blocks,
+  BringToFront,
   ChartNoAxesColumn,
   ChevronDown,
   FolderTree,
@@ -17,7 +18,6 @@ import {
   Palette,
   PanelLeftClose,
   PanelLeftOpen,
-  PanelsTopLeft,
   Puzzle,
   Settings,
   Sun,
@@ -507,7 +507,7 @@ onBeforeUnmount(() => {
                       :aria-current="route.name === 'plugins' ? 'page' : undefined"
                       @click="navigate('/plugins')"
                     >
-                      <PanelsTopLeft class="block size-4 shrink-0" />
+                      <BringToFront class="block size-4 shrink-0" />
                       <span class="sidebar-label truncate leading-none">{{ t('navigation.pluginManagement') }}</span>
                     </button>
                     <button

@@ -137,7 +137,7 @@ function saveTheme(event: MouseEvent) {
         >
           <ZInput
             v-model="query"
-            class="mr-3"
+            class="pr-3"
             :aria-label="t('appearance.settings.searchToken')"
             :placeholder="t('appearance.settings.searchPlaceholder')"
           >

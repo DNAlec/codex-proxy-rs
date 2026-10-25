@@ -52,11 +52,6 @@ const sections = computed(() => [
   ...(authenticationContribution.value ? [{ label: t('plugins.configuration.clientAuthentication'), value: 'authentication', icon: ShieldCheck }] : []),
 ])
 const primaryLabel = computed(() => versionChanged.value ? t('plugins.configuration.applyAndSwitch') : props.instance?.configurationRequired ? t('plugins.configuration.saveAndEnable') : t('plugins.configuration.saveSettings'))
-const secretModes = computed(() => ([
-  { label: t('plugins.configuration.keepExistingValues'), value: 'preserve' },
-  { label: t('plugins.configuration.replaceAllValues'), value: 'replace' },
-  { label: t('plugins.configuration.clearAllValues'), value: 'clear' },
-]))
 
 async function focusConfigurationInvalid() {
   section.value = 'general'
@@ -125,22 +120,14 @@ function clearSecrets() {
       </div>
       <ZSegmented v-if="sections.length > 1" v-model="section" :options="sections" :aria-label="t('plugins.configuration.pluginSettingsPartition')" :disabled="saving" class="w-fit max-w-full" />
       <div v-show="section === 'general'" class="grid gap-5">
-        <ZSegmented
-          v-if="existingSecretFields.length"
-          v-model="secretMode"
-          :options="secretModes"
-          :aria-label="t('plugins.configuration.secretsModeLabel')"
-          :disabled="saving"
-          class="w-full sm:w-auto"
-        />
         <PluginConfigurationFields
           ref="configurationFields"
           v-model:configuration="configuration"
           v-model:secrets="secretValues"
+          v-model:secret-mode="secretMode"
           :schema="artifact.metadata.configurationSchema"
           :secret-fields="artifact.metadata.secretFields"
           :existing-secret-fields="existingSecretFields"
-          :secret-mode="secretMode"
           :disabled="saving"
           @validity-change="configurationValid = $event"
         />

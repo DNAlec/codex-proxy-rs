@@ -523,6 +523,9 @@ watch(
           </div>
         </li>
       </ul>
+      <p class="m-0 rounded-cp bg-cp-fill-quaternary px-3 py-2.5 text-cp-sm leading-relaxed font-normal text-cp-text-secondary">
+        {{ t('systemUpdate.plugins.requestErrorHelp') }}
+      </p>
     </div>
   </ZConfirmDialog>
 
