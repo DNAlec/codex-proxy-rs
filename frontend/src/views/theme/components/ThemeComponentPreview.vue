@@ -20,6 +20,7 @@ import {
 import { computed, shallowRef } from 'vue'
 
 import { useI18n } from 'vue-i18n'
+import { formatProviderLabel } from '@/utils/providers'
 
 const { t } = useI18n({ useScope: 'global' })
 
@@ -49,8 +50,8 @@ const controlHeight = shallowRef(38)
 const syncTagVisible = shallowRef(true)
 
 const providerOptions = computed(() => ([
-  { label: 'OpenAI', value: 'openai' },
-  { label: 'xAI', value: 'xai' },
+  { label: formatProviderLabel('openai'), value: 'openai' },
+  { label: formatProviderLabel('xai'), value: 'xai' },
   { label: t('appearance.preview.components.allPlatforms'), value: 'all' },
 ]))
 const viewOptions = computed(() => ([
@@ -81,12 +82,12 @@ const tableColumns = computed(() => (defineTableColumns<PreviewTableRow>([
   { key: 'updatedAt', label: t('appearance.preview.components.recentlyUsed'), kind: 'datetime', size: 'lg' },
 ])))
 const tableRows = computed<PreviewTableRow[]>(() => ([
-  { id: 'relay', account: 'relay@example.com', provider: 'OpenAI', status: 'active', requests: '12,840', latency: '228 ms', updatedAt: t('appearance.preview.components.justNow') },
-  { id: 'gateway', account: 'gateway@example.com', provider: 'xAI', status: 'active', requests: '9,462', latency: '316 ms', updatedAt: t('common.time.minutesAgo', { count: 2 }) },
-  { id: 'quota', account: 'quota@example.com', provider: 'OpenAI', status: 'rate_limited', requests: '7,318', latency: '486 ms', updatedAt: t('common.time.minutesAgo', { count: 5 }) },
-  { id: 'batch', account: 'batch@example.com', provider: 'OpenAI', status: 'active', requests: '5,904', latency: '264 ms', updatedAt: t('common.time.minutesAgo', { count: 8 }) },
-  { id: 'fallback', account: 'fallback@example.com', provider: 'xAI', status: 'error', requests: '3,172', latency: '—', updatedAt: t('common.time.minutesAgo', { count: 12 }) },
-  { id: 'disabled', account: 'disabled@example.com', provider: 'OpenAI', status: 'disabled', requests: '0', latency: '—', updatedAt: t('appearance.preview.components.hoursAgo') },
+  { id: 'relay', account: 'relay@example.com', provider: formatProviderLabel('openai'), status: 'active', requests: '12,840', latency: '228 ms', updatedAt: t('appearance.preview.components.justNow') },
+  { id: 'gateway', account: 'gateway@example.com', provider: formatProviderLabel('xai'), status: 'active', requests: '9,462', latency: '316 ms', updatedAt: t('common.time.minutesAgo', { count: 2 }) },
+  { id: 'quota', account: 'quota@example.com', provider: formatProviderLabel('openai'), status: 'rate_limited', requests: '7,318', latency: '486 ms', updatedAt: t('common.time.minutesAgo', { count: 5 }) },
+  { id: 'batch', account: 'batch@example.com', provider: formatProviderLabel('openai'), status: 'active', requests: '5,904', latency: '264 ms', updatedAt: t('common.time.minutesAgo', { count: 8 }) },
+  { id: 'fallback', account: 'fallback@example.com', provider: formatProviderLabel('xai'), status: 'error', requests: '3,172', latency: '—', updatedAt: t('common.time.minutesAgo', { count: 12 }) },
+  { id: 'disabled', account: 'disabled@example.com', provider: formatProviderLabel('openai'), status: 'disabled', requests: '0', latency: '—', updatedAt: t('appearance.preview.components.hoursAgo') },
 ]))
 const pagination: PaginationState = {
   currentPage: 2,
@@ -414,7 +415,7 @@ function statusClass(status: PreviewTableRow['status']) {
             <div class="flex items-center justify-between rounded-cp bg-cp-bg-container px-4 py-3 shadow-cp-tertiary">
               <div>
                 <strong class="block text-cp-sm text-cp-text">relay@example.com</strong>
-                <span class="mt-1 block text-[10px] text-cp-text-quaternary">OpenAI · OAuth</span>
+                <span class="mt-1 block text-[10px] text-cp-text-quaternary">{{ formatProviderLabel('openai') }} · OAuth</span>
               </div>
               <ZPopover>
                 <template #reference>

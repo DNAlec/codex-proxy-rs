@@ -4,7 +4,7 @@ import { Fingerprint, Plug } from '@lucide/vue'
 import { t } from '@/i18n'
 
 const PROVIDER_DISPLAY_NAMES = {
-  openai: 'OpenAI',
+  openai: 'Codex',
   xai: 'xAI',
 } as const
 

@@ -438,7 +438,7 @@ Client Key 鉴权完成后，API adapter 从有界请求头识别客户端，Cor
 
 Responses 按模型目录编译候选；全局模型映射是精确映射，未命中时模型名原样交给候选 Provider。
 Images 与 standalone Search 是 OpenAI Provider 自有端点：两者都不参与文本模型映射，只在 Client Key
-的账号范围确实包含 OpenAI 账号时生成单一 OpenAI 候选。Images 的图片模型由 Provider 从正文旁路
+的账号范围确实包含 Codex 账号时生成单一 OpenAI 候选。Images 的图片模型由 Provider 从正文旁路
 提取，用于账号模型政策检查，并在中间件改写后复验当前租约账号；不要求图片模型进入文本目录。
 Search 的请求身份与正文透传规则见 [OpenAI 透传](api.md#openai-透传)
 

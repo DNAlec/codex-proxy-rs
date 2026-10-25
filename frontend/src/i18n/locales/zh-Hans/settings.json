@@ -150,7 +150,7 @@
     },
     "scheduling": {
       "roundRobin": "轮询",
-      "autoReviewSlotsHelp": "仅对 OpenAI 账号生效，普通并发为 10、审批名额为 3 时，两类请求分别最多运行 10 个和 3 个，互不占用名额",
+      "autoReviewSlotsHelp": "仅对 Codex 账号生效，普通并发为 10、审批名额为 3 时，两类请求分别最多运行 10 个和 3 个，互不占用名额",
       "autoReviewQueueHelp": "开启独立额度后，审批请求单独排队，可超过账号队列容量，仍受总等待容量、排队超时与密钥限额约束",
       "weights": {
         "load": "负载系数",
@@ -282,7 +282,7 @@
       "queueTimeoutHelp": "两个队列共用，1–120 秒",
       "autoReview": {
         "label": "自动审批独立并发",
-        "description": "每个 OpenAI 账号的额外名额，0 共用普通并发",
+        "description": "每个 Codex 账号的额外名额，0 共用普通并发",
         "helpTitle": "自动审批独立并发说明"
       },
       "queueTimeoutHelpTitle": "排队超时说明",
