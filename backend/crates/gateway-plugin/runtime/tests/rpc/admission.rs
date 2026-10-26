@@ -145,12 +145,13 @@ async fn next_resumption_does_not_need_a_vacant_initial_queue_slot() {
                 .await
         }
     });
-    started.recv().await.unwrap();
-    // 未消费的 next 与普通回调共享有界驻留额度
-    let mut occupying = Box::pin(call(&session, "callback"));
-    assert!(futures::poll!(&mut occupying).is_pending());
-    started.recv().await.unwrap();
-    occupying.await.unwrap();
+    tokio::time::timeout(Duration::from_secs(2), started.recv())
+        .await
+        .expect("next callback should start")
+        .unwrap();
+    // 回调通知可能先于 Suspend 到达，持续驱动普通调用才能在名额释放后完成
+    call(&session, "callback").await.unwrap();
+    started.try_recv().unwrap();
     let mut active = Box::pin(call(&session, "hang"));
     assert!(futures::poll!(&mut active).is_pending());
     let mut queued = Box::pin(call(&session, "echo"));
@@ -165,7 +166,13 @@ async fn next_resumption_does_not_need_a_vacant_initial_queue_slot() {
     assert!(!waiting.is_finished());
     drop(active);
     assert!(queued.await.is_ok());
-    assert!(waiting.await.unwrap().is_ok());
+    assert!(
+        tokio::time::timeout(Duration::from_secs(2), waiting)
+            .await
+            .expect("next call should resume after execution capacity is released")
+            .unwrap()
+            .is_ok()
+    );
     assert!(session.is_ready());
     session.shutdown(Duration::from_secs(1)).await;
 }
