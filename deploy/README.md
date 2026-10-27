@@ -335,7 +335,7 @@ SSE 注释保活用于防止传输链路空闲断开，不会重置 Codex 等待
 
 管理端生成的 CC Switch 一键导入包含连接信息和当前 Key 的日／周额度查询，默认每 30 分钟刷新。
 查询地址和凭据随导入生成，在 CC Switch 中修改 Provider 的地址或 Key 后，需重新导入以同步用量查询。
-导入不包含下方模板的远程压缩、原生生图和 WebSocket 设置。需要这些设置时，使用下方配置直连 CPR，
+导入不包含下方模板的远程压缩、原生生图、WebSocket 和语音设置。需要这些设置时，使用下方配置直连 CPR，
 避免 CC Switch 切换或接管后重写 Provider 配置
 
 Linux/macOS 默认目录为 `~/.codex/`，Windows 为 `%USERPROFILE%\.codex\`；
@@ -352,6 +352,8 @@ model = "gpt-5.6-terra"
 review_model = "gpt-5.6-terra"
 model_reasoning_effort = "max"
 service_tier = "default"
+# 语音通话控制地址
+experimental_realtime_ws_base_url = "http://127.0.0.1:8080/v1"
 
 [model_providers.OpenAI]
 name = "OpenAI"
@@ -359,15 +361,15 @@ base_url = "http://127.0.0.1:8080/v1"
 wire_api = "responses"
 supports_websockets = false
 requires_openai_auth = false
-# 填写代理密钥，真实账号由服务端管理。
+# 代理密钥
 experimental_bearer_token = "<client-api-key>"
 
 [model_providers.OpenAI.capabilities]
-# Codex 0.162.0+ 显式启用 V2 远程压缩，不依赖 Provider 名称识别
+# V2 远程压缩
 remote_compaction = "v2"
 
 [model_providers.OpenAI.http_headers]
-# 供客户端识别服务端托管认证，本身不是密钥。
+# 服务端托管认证
 X-OpenAI-Actor-Authorization = "proxy-managed"
 
 [features]
@@ -400,6 +402,20 @@ V2 远程压缩通过 Responses 接口发送 `compaction_trigger`，网关和上
 服务端仍可能用 WebSocket 访问上游；客户端开关不控制服务端连接池和 HTTP 回退策略。
 Codex OAuth 账号的上游传输方式默认 WS；固定为 SSE 的账号不承接必须依赖 WS 的预热及连接内续接。
 仅使用这类账号时，客户端保持 `supports_websockets = false`，避免先尝试 WS 再回退
+
+### 语音通话
+
+Codex 0.164.0 的 `/voice` 通过 Provider 的 `base_url` 创建通话，控制连接另用顶层
+`experimental_realtime_ws_base_url`，不会自动继承 Provider 地址。两者应指向同一网关的 `/v1`，
+使用相同的代理密钥，并确保反向代理允许 WebSocket Upgrade。此设置独立于 Responses 的
+`supports_websockets` 开关
+
+已有配置需把 `experimental_realtime_ws_base_url` 合并到第一个 TOML 表之前，修改后完全退出并重启
+Codex。创建通话成功后仍报 `realtime websocket handshake failed` 时，先检查客户端日志中的
+`connecting realtime websocket` 是否指向网关；若仍为 `api.openai.com`，说明控制连接未经过代理
+
+语音使用具备上游权限的 OAuth 账号，音频流由客户端与上游直接传输，路由与限制见
+[Codex Live 语音通话](../docs/api.md#codex-live-语音通话)
 
 ### 时区与客户端环境信息
 
