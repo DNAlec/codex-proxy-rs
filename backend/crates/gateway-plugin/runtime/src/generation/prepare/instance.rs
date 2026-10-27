@@ -346,7 +346,6 @@ impl PluginRuntime {
             session.clone(),
             callbacks.clone(),
         )?;
-        let model_aliases = crate::adapter::catalog::prepare(manifest, &instance, session).await?;
         let upstream_entries = crate::adapter::upstream_adapter::prepare(
             manifest,
             &instance,
@@ -354,6 +353,9 @@ impl PluginRuntime {
             Arc::clone(&callbacks),
         )
         .await?;
+        let catalog =
+            crate::adapter::catalog::prepare(manifest, &instance, session, &upstream_entries)
+                .await?;
         prepared.contributions = PreparedContributions {
             observer_entries,
             commands,
@@ -362,7 +364,8 @@ impl PluginRuntime {
             middleware_entries,
             upstream_entries,
             authentication_entries,
-            model_aliases,
+            model_aliases: catalog.aliases,
+            models: catalog.models,
         };
         Ok(Arc::new(prepared))
     }
