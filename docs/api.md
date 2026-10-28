@@ -2124,7 +2124,7 @@ errorCode, errorMessage, startedAt, completedAt, expiresAt, createdAt, updatedAt
 
 `points[]` 提供趋势图与首页卡片使用的请求数、Tokens、缓存比例、错误数、成功率、
 `latencyValue`、首 Token P95、总延迟 P95 和输出吞吐 P50，以及时间标签与展示值
-内部调度分位数和容量分布通过用量洞察查询
+请求并发与内部调度等待通过用量洞察的 `performance.load` 查询
 
 ### Dashboard 客户端身份
 
@@ -2221,6 +2221,19 @@ OpenAI 推理强度优先取 `input` 中最后一条 `type: "configuration_updat
 上游传输为空；可用模型执行 ID 在“全部平台”下查询，不从路由候选推断实际调用平台。
 已登记的尝试即使尚未收到首个上游事件，也会保留真实 attempt。
 鉴权、解析、路由和准入等入口拒绝不属于该范围；请求观测仍是可能延迟或丢弃的异步投影
+
+性能洞察的 `performance.load` 和 `performance.points[].load` 使用相同的负载结构，分别表示查询范围汇总与时间桶指标：
+
+| 字段 | 含义 |
+| --- | --- |
+| `averageConcurrency` | 按有效时长加权的平均请求并发 |
+| `peakConcurrency` | 最大重叠请求数 |
+| `admissionDecisionP95Ms` | 准入判定耗时 P95，单位毫秒，无样本为 `null` |
+| `accountSelectionWaitP95Ms` | 账号选择等待耗时 P95，单位毫秒，无样本为 `null` |
+
+并发按逻辑请求的执行区间计算，不因重试 attempt 重复计数。
+区间从 `started_at` 到 `completed_at`，执行中请求按查询范围末端仍在处理计算；与时间桶重叠的请求参与该桶，
+平均值按重叠时长加权，峰值取桶内最大重叠请求数，无请求的时间桶为零。全范围平均按有效查询时长加权，峰值取各桶最大值
 
 汇总与洞察中的请求数与 outcome 分布覆盖筛选范围内全部请求；token、缓存、延迟与成本聚合仅统计
 已完整交付客户端的成功推理响应。OpenAI 的 `generate: false` 连接与上下文准备记录归类为

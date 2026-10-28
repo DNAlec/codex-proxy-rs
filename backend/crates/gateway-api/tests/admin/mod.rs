@@ -697,6 +697,7 @@ pub(super) struct MemoryClientKeyStore(Arc<Mutex<Option<ClientKeyRecord>>>);
 pub(super) struct MemoryObservations {
     pub summary: Option<UsageOverview>,
     pub trend: Option<Vec<RequestMetricPoint>>,
+    pub concurrency: Vec<gateway_admin::model::observability::UsageConcurrencyPoint>,
     pub summaries: Vec<(TimeRange, UsageFilter)>,
     pub trends: Vec<(TimeRange, UsageFilter)>,
     pub records: Vec<UsageQuery>,
@@ -1526,6 +1527,7 @@ impl ObservabilityStore for UnusedStore {
                     .clone()
                     .ok_or_else(|| unavailable("usage trend"))?,
                 costs: Vec::new(),
+                concurrency: data.concurrency.clone(),
             },
         )
     }

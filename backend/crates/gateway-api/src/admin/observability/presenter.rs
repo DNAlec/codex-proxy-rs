@@ -41,10 +41,6 @@ pub(crate) fn display_rate(value: f64) -> String {
     }
 }
 
-fn basis_points_rate(value: u64) -> f64 {
-    value as f64 / 10_000.0
-}
-
 pub(crate) fn outcome_name(outcome: &domain::RequestOutcome) -> &str {
     outcome.as_str()
 }
@@ -1050,6 +1046,17 @@ pub(crate) fn usage_summary_view(
     }
 }
 
+fn overview_load_view(load: &domain::UsageInsightsLoad) -> OverviewLoadView {
+    OverviewLoadView {
+        average_concurrency: load.average_concurrency,
+        peak_concurrency: load.peak_concurrency,
+        admission_decision_p95_ms: load.admission_decision_p95_ms.map(|value| value.as_f64()),
+        account_selection_wait_p95_ms: load
+            .account_selection_wait_p95_ms
+            .map(|value| value.as_f64()),
+    }
+}
+
 pub(crate) fn usage_insights_view(
     insights: domain::UsageInsights,
     time: crate::time::TimePresenter,
@@ -1092,31 +1099,10 @@ pub(crate) fn usage_insights_view(
                 .first_token_latency_percentiles
                 .p99_ms
                 .map(|value| value.as_f64()),
-            admission_decision_p50_ms: point
-                .admission_decision_percentiles
-                .p50_ms
-                .map(|value| value.as_f64()),
-            admission_decision_p95_ms: point
-                .admission_decision_percentiles
-                .p95_ms
-                .map(|value| value.as_f64()),
-            account_selection_wait_p50_ms: point
-                .account_selection_wait_percentiles
-                .p50_ms
-                .map(|value| value.as_f64()),
-            account_selection_wait_p95_ms: point
-                .account_selection_wait_percentiles
-                .p95_ms
-                .map(|value| value.as_f64()),
             output_throughput_p10: point.output_throughput_p10,
             output_throughput_p50: point.output_throughput_p50,
             output_throughput_p90: point.output_throughput_p90,
-            capacity_utilization: point
-                .capacity_utilization_avg_basis_points
-                .map(basis_points_rate),
-            capacity_utilization_p95: point
-                .capacity_utilization_p95_basis_points
-                .map(basis_points_rate),
+            load: overview_load_view(&point.load),
         })
         .collect();
     let cost_points = insights
@@ -1185,42 +1171,10 @@ pub(crate) fn usage_insights_view(
                 .first_token_latency_percentiles
                 .p99_ms
                 .map(|value| value.as_f64()),
-            admission_decision_p50_ms: insights
-                .performance
-                .admission_decision_percentiles
-                .p50_ms
-                .map(|value| value.as_f64()),
-            admission_decision_p95_ms: insights
-                .performance
-                .admission_decision_percentiles
-                .p95_ms
-                .map(|value| value.as_f64()),
-            account_selection_wait_p50_ms: insights
-                .performance
-                .account_selection_wait_percentiles
-                .p50_ms
-                .map(|value| value.as_f64()),
-            account_selection_wait_p95_ms: insights
-                .performance
-                .account_selection_wait_percentiles
-                .p95_ms
-                .map(|value| value.as_f64()),
             output_throughput_p10: insights.performance.output_throughput_p10,
             output_throughput_p50: insights.performance.output_throughput_p50,
             output_throughput_p90: insights.performance.output_throughput_p90,
-            capacity_utilization: insights
-                .performance
-                .capacity_utilization_avg_basis_points
-                .map(basis_points_rate),
-            capacity_utilization_p95: insights
-                .performance
-                .capacity_utilization_p95_basis_points
-                .map(basis_points_rate),
-            latency_coverage: insights.performance.latency_coverage,
-            first_token_coverage: insights.performance.first_token_coverage,
-            admission_decision_coverage: insights.performance.admission_decision_coverage,
-            account_selection_wait_coverage: insights.performance.account_selection_wait_coverage,
-            capacity_coverage: insights.performance.capacity_coverage,
+            load: overview_load_view(&insights.performance.load),
             points: performance_points,
         },
         cost: OverviewCostView {
