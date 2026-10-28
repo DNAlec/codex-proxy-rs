@@ -54,7 +54,7 @@ use forward::{
 pub use protocol::{ResponseCreateFrameError, decode_response_create_with_context};
 use protocol::{connection_limit_event, is_response_create};
 
-const TEXT_FRAMES_ONLY: &str = "Responses WebSocket accepts text frames only";
+const TEXT_FRAMES_ONLY: &str = "Responses WebSocket accepts text frames only.";
 const CONNECTION_LIMIT_CLOSE_REASON: &str = "Responses websocket connection limit reached";
 
 /// 将已认证的 `GET /v1/responses` 升级为 Responses WebSocket
@@ -288,13 +288,13 @@ async fn serve_responses_websocket(socket: WebSocket, session: ResponsesWebSocke
                 let current = execution.request_settings().ok_or_else(|| {
                     gateway_core::error::GatewayError::new(
                         gateway_core::error::GatewayErrorKind::Internal,
-                        "runtime snapshot is unavailable",
+                        "Gateway configuration is unavailable.",
                     )
                 })?;
                 let rebased = settings.rebase(current.snapshot()).map_err(|_| {
                     gateway_core::error::GatewayError::new(
                         gateway_core::error::GatewayErrorKind::InvalidRequest,
-                        "request settings are invalid",
+                        "Request settings are invalid.",
                     )
                 })?;
                 client = client.with_request_settings(rebased);

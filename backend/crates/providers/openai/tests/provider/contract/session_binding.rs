@@ -63,7 +63,10 @@ async fn cyber_policy_session_exclusion_has_actionable_non_retryable_error() {
         .client_visible_upstream_error()
         .expect("actionable client message");
     assert_eq!(visible.code(), Some("cyber_policy"));
-    assert!(visible.message().contains("Do not repeatedly retry"));
+    assert_eq!(
+        visible.message(),
+        "No account is available for this session after an upstream cyber policy rejection."
+    );
     assert_eq!(server.received_requests().await.unwrap().len(), 1);
     // 可见但不属于固定账号范围的候选不能掩盖会话限制
     create_account(&store, "acct_subagent_b").await;
