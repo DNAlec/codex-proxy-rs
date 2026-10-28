@@ -358,6 +358,7 @@ experimental_realtime_ws_base_url = "http://127.0.0.1:8080/v1"
 [model_providers.OpenAI]
 name = "OpenAI"
 base_url = "http://127.0.0.1:8080/v1"
+model_catalog_url = "http://127.0.0.1:8080/v1/models"
 wire_api = "responses"
 supports_websockets = false
 requires_openai_auth = false
@@ -380,6 +381,9 @@ goals = true
 `OpenAI` 是自定义 Provider ID，大小写要与 `model_provider` 一致。合并配置时修改已有表，
 不要重复添加 `[features]` 或 Provider 表。更换模型时也要检查其支持的推理强度。
 密钥以明文保存，文件仅供本人读取，不要提交到 Git。接入代理不需要扩大命令沙箱的联网或文件权限
+
+`model_catalog_url` 指向同一网关的 `/v1/models`；更换网关地址时与 `base_url` 一起修改。
+该接口返回当前密钥可见的模型目录，具体格式见 [模型目录](../docs/api.md#模型目录)
 
 V2 远程压缩通过 Responses 接口发送 `compaction_trigger`，网关和上游需支持该协议。
 若 Provider ID 改为 `custom`，相应能力配置也要改到 `[model_providers.custom.capabilities]`

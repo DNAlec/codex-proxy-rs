@@ -15,15 +15,15 @@
 
 Codex Proxy RS 是单进程、单副本运行的多 Provider AI 网关，同时提供：
 
-- 面向客户端的 OpenAI Responses、Images、standalone Search 和模型目录协议
+- 面向客户端的 OpenAI Responses、Chat Completions、Images、standalone Search 和模型目录协议
 - 面向管理员的 `/api/admin/*` 控制面和 Vue 管理端
 - 面向 Key 持有者的 `/api/key-usage/*` 用量与客户端配置接口、独立 `/key-usage` 页面，以及复用数据面认证的 `/v1/usage` 额度查询
 - 固定的 OpenAI 与 xAI 两个编译期 Provider，以及插件提供的认证、中间件和管理扩展
 - PostgreSQL 持久化、Redis 协调状态以及 S3/R2 数据库备份
 
-系统不提供 `/v1/chat/completions`，不存在 Provider Instance 层，也不支持通过复制应用容器进行多副本
-扩容。Client Key 限定账号分组，而不是绑定某个 Provider；一次请求的 Provider 候选由账号范围、模型
-能力和运行时健康共同决定
+Chat Completions 通过 API 协议转换复用 Responses 执行链。系统不存在 Provider Instance 层，也不支持
+通过复制应用容器进行多副本扩容。Client Key 限定账号分组，而不是绑定某个 Provider；一次请求的
+Provider 候选由账号范围、模型能力和运行时健康共同决定
 
 ## 2. 运行拓扑
 
@@ -948,8 +948,8 @@ credential 与 quota 是两组独立事实：credential refresh 不等于 quota 
 - 账号导入和 OAuth complete（包括重新授权）在 credential 提交、Provider 事实失效及快照发布后，
   由 Admin 共用流程后台读取一次额度；不等待观测完成才返回管理请求，失败记录告警但不回滚账号事务。
   手工和后台 credential refresh 仍不隐式刷新 quota
-- quota refresh、正常推理返回的 rate-limit headers 和后台健康任务汇入同一额度事实；套餐只用于展示与
-  目录 cache 隔离，不创建套餐专属状态机。
+- quota refresh、正常推理返回的 rate-limit headers 和后台健康任务汇入同一额度事实；Provider 使用套餐
+  事实进行展示、目录 cache 隔离和请求资格检查，不创建套餐专属状态机。
   OpenAI Provider 将其中明确的套餐变更与额度原子提交，共用凭据版本和观察时间保护；
   空值及 `unknown` 不覆盖套餐，同族泛化值保留具体子类型。Token 刷新保留提交时的账号资料
 
@@ -993,6 +993,10 @@ Store 从请求源事实维护窄事实及十五分钟、小时统计状态，�
 请求队列为仍存在的源请求预留部分批量，其余名额按最早入队消费，清理积压期间持续发布新请求统计，同时推进旧贡献撤销。
 统计 Worker 跨周期保留消费批量上限，整轮无进展超时或存储操作超时后缩小批量，满批快速完成时恢复吞吐；
 维护锁竞争造成的空轮不重置批量，未提交事务与未确认队列项由后续周期重试。
+
+用量洞察的请求并发由 Store 在同一读取快照中按请求开始、完成时间聚合，运行中请求计至查询范围末尾。
+每个时间桶返回按持续时间加权的平均并发和峰值，Admin 按各桶的有效时长合并全区间平均值，并取全区间峰值。
+该趋势使用请求记录，不读取 Redis 准入租约，也不参与容量裁决；筛选与统计口径见[用量统计](api.md#记录范围与统计口径)
 
 ### 额度预测
 

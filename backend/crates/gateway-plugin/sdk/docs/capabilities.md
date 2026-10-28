@@ -542,7 +542,8 @@ restore_and_validate_response(response).await
 ### 模型目录
 
 `model_catalog` 仅支持 v2，在 registration 阶段通过 `model_catalog.register` 一次提交
-`ModelCatalogRegistrationV2 { aliases, models }`，不需要请求级 binding。
+`ModelCatalogRegistrationV2 { aliases, models }`，不接受请求级 binding。
+返回值必须同时包含 `aliases` 和 `models`，没有对应条目时使用空数组。
 `aliases` 的每条 `ModelAlias { id, provider, model }` 定义公开 ID、Provider 及直接上游目标，条目正确性由插件负责。
 别名条目重复、目标不存在或 Provider 未注册不阻止宿主快照发布。
 请求按发布顺序取首个匹配条目，插件别名优先于静态映射，目标直接用于上游选路，不递归展开别名或目标上的静态映射
@@ -575,7 +576,6 @@ let plugin = PluginBuilder::from_json(include_bytes!("../plugin.json"))?
 
 清单须显式声明 `model_catalog.version = 2`，可使用上述 `.model_catalog(...)` 固定目录，
 或通过 `PluginBuilder::on(methods::MODEL_CATALOG_REGISTER_V2, handler)` 返回 `TypedReply<ModelCatalogRegistrationV2>`。
-使用 v1 的插件需将原 `models` 别名列表移入 `aliases`，补充 `models: []`，更新能力声明并重新构建、打包；仅修改清单版本号不能迁移旧结构
 
 原生 Codex 目录成功返回后，宿主保留其中的完整对象，只追加可见且尚未出现的适配模型画像；原生读取错误仍向调用方返回错误。
 适配模型的 wire 模型名、协议编解码及摘要由插件负责，宿主只使用公开 ID、能力和账号范围参与现有选号，不生成请求正文或转换历史

@@ -207,7 +207,7 @@ Dashboard 的 `lastUsedRelative` 和账号额度的 `refreshedAtRelative` 由后
 ## 3. OpenAI 数据面与模型目录
 
 除下述入站解压保护外，Responses、Chat Completions、Images 和 standalone Search HTTP body、
-WebSocket message 和 frame 不设置网关私有长度上限；协议可接受性由上游决定
+WebSocket message 和 frame 不设置网关私有长度上限；请求字段与协议限制见各入口说明
 
 | 方法 | 路由 | 说明 |
 | --- | --- | --- |
@@ -290,13 +290,19 @@ print(completion.choices[0].message.content)
 
 #### 响应与共用规则
 
-非流式响应包含一个 `choices` 项，支持文本、拒绝和 function 工具调用。
-流式响应交付对应的 Chat delta；`stream_options` 仅在 `stream: true` 时可提供，
+非流式响应包含一个 `choices` 项，支持文本、拒绝和 function 工具调用；流式响应交付对应的 Chat delta。
+两种响应的 `id` 均由网关生成，`model` 保留客户端请求的模型 ID；流内各块使用同一身份。
+正常完成的 `finish_reason` 为 `stop`，包含工具调用时为 `tool_calls`；上游明确因输出长度或内容过滤而未完成时，
+分别为 `length` 或 `content_filter`
+
+`stream_options` 仅在 `stream: true` 时可提供，
 `include_usage: true` 在完整上游用量可用时于结束前追加 `choices: []` 的用量块，其余块的 `usage` 为 `null`。
 未提供完整用量时不补造 Token 数；缺省不启用流长度混淆，`include_obfuscation: true` 不受支持，`false` 可接受
 
-响应对象新增普通属性、非必要事件不影响已有内容映射；无法表达的业务输出、缺少必要终态或终态冲突会失败，
-不以丢弃内容或补造成功结束掩盖错误。OpenAI 是此入口的兼容目标，混合分组仍沿用现有选路与 fallback 规则，
+响应对象的额外普通属性、非必要事件不影响已有内容映射；无法表达的业务输出、缺少必要终态或终态冲突会失败，
+不补造成功终态。SSE 已开始后通过 `data: {"error": ...}` 交付错误，再以 `[DONE]` 结束，
+因此 `[DONE]` 仅表示流结束，不能单独作为成功依据。
+OpenAI 是此入口的兼容目标，混合分组沿用账号范围内的选路与 fallback 规则，
 不能据此推导所有 Provider 都具备相同的 Chat 能力
 
 Responses 的 reasoning 项（包括摘要与 `encrypted_content`）不投影到 Chat 消息，
@@ -306,8 +312,8 @@ Chat 沿用 [Client Key 鉴权](#openai-数据面客户端接口)、[请求期�
 [请求头与身份](#请求头与身份)及[隐私策略](#隐私策略)。隐私策略的 `request_body` 面向转换后的 Responses 正文，
 例如 `$.input`，不需要另外维护一套针对 `messages` 的规则
 
-转换后的请求仍执行统一[正文兼容](#正文兼容)：顶层 `temperature`、`max_output_tokens` 和
-`prompt_cache_retention` 会被移除。因此接受相应 Chat 参数不表示采样、输出长度或缓存保留设置必然生效，
+转换后的请求按选中 Provider 的正文规则处理。OpenAI 的[正文兼容](#正文兼容)会移除顶层 `temperature`、
+`max_output_tokens` 和 `prompt_cache_retention`。因此接受相应 Chat 参数不表示采样、输出长度或缓存保留设置必然生效，
 不会通过本地截断模拟长度控制；`top_p` 等其他参数继续由上游判断
 
 ### Images 请求
@@ -419,7 +425,7 @@ Images 的 `x-codex-image-turn-id` 和 Desktop 自动 Git 上下文的 `clientUs
 
 #### 正文兼容
 
-Responses 上游编码会移除 Codex 不接受的顶层 `temperature`、`max_output_tokens` 和
+OpenAI Provider 的 Responses 上游编码会移除 Codex 不接受的顶层 `temperature`、`max_output_tokens` 和
 `prompt_cache_retention`。缺少顶层 `store` 时补齐 `false`，与官方 Codex 客户端一致；
 显式提供的值保持原样。顶层 `input` 为字符串时按公开 Responses API 的语义展开为一条
 `user` 文本消息条目（`{"type": "message", "role": "user", "content": [{"type": "input_text", ...}]}`），
