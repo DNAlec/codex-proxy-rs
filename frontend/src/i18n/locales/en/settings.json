@@ -5,7 +5,6 @@
       "clientIdentitySource": "Client identity source",
       "globalConfiguration": "Global configuration",
       "customConfiguration": "Custom configuration",
-      "presetLoadingFailed": "Preset loading failed",
       "enterIntegerFromTo": "Enter an integer from 1 to {version}",
       "clientDefault": "Client default",
       "useCustomUserAgent": "Use a custom user agent",
@@ -23,7 +22,6 @@
       "systemVersion": "System version",
       "userAgentPlaceholder": "Enter the full user agent",
       "previewAfterFillingInVersion": "Preview after filling in the version",
-      "previewIsNotAvailableYet": "Preview is not available yet",
       "resolvingClientIdentity": "Resolving client identity",
       "fixedIdentity": "Fixed identity",
       "automaticUpdates": "Automatic updates",
@@ -38,7 +36,6 @@
       "operatingSystem": "Operating system",
       "cpuArchitecture": "CPU architecture",
       "xaiClientIdentitySource": "xAI client identity source",
-      "loadFailed": "Global configuration failed to load",
       "clientType": "Client type",
       "grokCliVersion": "Grok CLI version",
       "forExample": "For example: 1.0.13",
@@ -128,7 +125,6 @@
       "unitPriceUnitUsdMTokens": "Unit prices in USD per million tokens",
       "priorityHelp": "Custom prices override source prices, then built-in prices, affecting local estimates and spending limits only",
       "tableHelp": "Effective standard-tier prices; image models show image token prices and struck-through values show source prices; edit a model to view other tiers",
-      "priceListFailedToLoad": "Price list failed to load",
       "deleteModelPriceList": "Delete model price list",
       "deleteDescription": "Delete source and custom prices for this model, leaving past costs unchanged",
       "standard": "Standard",
@@ -462,7 +458,6 @@
       "refreshingDownloads": "Refreshing offline download links",
       "refreshOfflineDownloadLinks": "Refresh offline download links",
       "loadingPackages": "Loading offline packages",
-      "packagesFailed": "Failed to load offline packages",
       "stableChannel": "Stable channel",
       "linkExpired": "Link expired: {value}",
       "downloadMsix": "Download {value} MSIX",
@@ -647,8 +642,6 @@
         "stay": "Keep editing"
       },
       "saveChanges": "Save",
-      "settingsLoadingFailed": "Settings loading failed",
-      "reload": "Reload",
       "basicSettings": "Basic settings"
     }
   }

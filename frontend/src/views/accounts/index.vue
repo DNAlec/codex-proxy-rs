@@ -414,7 +414,6 @@ const {
       :stopping="stoppingImportTask"
       :error="importTaskError"
       @select="importTasks.select"
-      @refresh="importTasks.refresh"
       @stop="importTasks.stop"
       @after-leave="importTasks.refresh(true)"
       @view-accounts="showImportTasks = false; loadAccounts()"

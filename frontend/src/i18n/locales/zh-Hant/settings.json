@@ -5,7 +5,6 @@
       "clientIdentitySource": "客戶端身份來源",
       "globalConfiguration": "全局配置",
       "customConfiguration": "獨立配置",
-      "presetLoadingFailed": "預設加載失敗",
       "enterIntegerFromTo": "請輸入 1～{version} 的正整數",
       "clientDefault": "客戶端預設",
       "useCustomUserAgent": "使用自定義用戶代理",
@@ -23,7 +22,6 @@
       "systemVersion": "系統版本",
       "userAgentPlaceholder": "填寫完整用戶代理",
       "previewAfterFillingInVersion": "填寫版本後預覽",
-      "previewIsNotAvailableYet": "預覽暫不可用",
       "resolvingClientIdentity": "正在解析客戶端身份",
       "fixedIdentity": "固定身份",
       "automaticUpdates": "自動更新",
@@ -38,7 +36,6 @@
       "operatingSystem": "操作系統",
       "cpuArchitecture": "CPU 架構",
       "xaiClientIdentitySource": "xAI 客戶端身份來源",
-      "loadFailed": "全局配置加載失敗",
       "clientType": "客戶端類型",
       "grokCliVersion": "Grok CLI 版本",
       "forExample": "例如：1.0.13",
@@ -128,7 +125,6 @@
       "unitPriceUnitUsdMTokens": "單價單位：USD / 1M Tokens",
       "priorityHelp": "人工覆蓋優先於同步價目，再繼承內置價格，僅影響本地估算與金額限額",
       "tableHelp": "表中爲標準檔生效價，圖像模型顯示圖像 Token 價格，劃線爲來源價，其他檔位在編輯中查看",
-      "priceListFailedToLoad": "價目加載失敗",
       "deleteModelPriceList": "刪除模型價目",
       "deleteDescription": "刪除該模型的同步與自定義價格，歷史賬單不變",
       "standard": "標準",
@@ -462,7 +458,6 @@
       "refreshingDownloads": "正在刷新離線下載鏈接",
       "refreshOfflineDownloadLinks": "刷新離線下載鏈接",
       "loadingPackages": "正在加載離線安裝包",
-      "packagesFailed": "離線安裝包加載失敗",
       "stableChannel": "穩定通道",
       "linkExpired": "鏈接失效：{value}",
       "downloadMsix": "下載 {value} MSIX",
@@ -647,8 +642,6 @@
         "stay": "繼續編輯"
       },
       "saveChanges": "保存基礎設置",
-      "settingsLoadingFailed": "設置加載失敗",
-      "reload": "重新加載",
       "basicSettings": "基礎設置"
     }
   }

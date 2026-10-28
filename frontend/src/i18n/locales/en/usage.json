@@ -185,8 +185,6 @@
     "records": {
       "requestLog": "Request log",
       "currentRequestRecord": "Current request record",
-      "refreshFailed": "Failed to refresh request logs, showing the last available results",
-      "loadFailed": "Failed to load request logs, use the refresh button above to try again",
       "noRecordsMatchTheseFilters": "No records match these filters"
     },
     "page": {
@@ -197,13 +195,10 @@
       "changesInUsageOverTime": "Changes in usage over time",
       "requestHealthTimeline": "Request health",
       "updated": "Updated {asOfDisplay}",
-      "temporarilyRetainLastResult": ", temporarily retain the last result",
-      "clickRefreshAtTopToTryAgain": ", please click refresh at the top to try again",
       "description": "View usage, performance trends, and request errors",
       "dateRangeLabel": "Statistics date range, limited to the last 31 days",
       "requestDetails": "Request log",
       "recordsDescription": "Successful and failed request records",
-      "failedToLoad": "Failed to load: {error}",
       "noRequestsMatchTheseFilters": "No requests match these filters",
       "viewErrorDetails": "View error details",
       "viewUsageRecordDetails": "View usage record details"

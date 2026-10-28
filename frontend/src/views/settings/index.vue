@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ZButton, ZConfirmDialog, ZEmpty, ZIconButton, ZPageHeader, ZSegmented, ZSelect } from '@codex-proxy/ui'
+import { ZButton, ZConfirmDialog, ZIconButton, ZPageHeader, ZSegmented, ZSelect } from '@codex-proxy/ui'
 
 import { Save, Undo2 } from '@lucide/vue'
 
@@ -163,14 +163,6 @@ watch(section, (value) => {
     </div>
 
     <div v-if="settingsVisited" v-show="isBasicSection" class="mt-5 grid w-full gap-5">
-      <ZEmpty v-if="error" :title="t('settings.page.settingsLoadingFailed')" role="alert">
-        <template #action>
-          <ZButton :loading="loading" @click="loadSettings()">
-            {{ t('settings.page.reload') }}
-          </ZButton>
-        </template>
-      </ZEmpty>
-
       <SettingsAccessSection
         v-if="visited.has('access')"
         v-show="section === 'access'"

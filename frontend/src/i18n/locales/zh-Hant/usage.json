@@ -185,8 +185,6 @@
     "records": {
       "requestLog": "請求日誌",
       "currentRequestRecord": "當前請求記錄",
-      "refreshFailed": "請求日誌刷新失敗，暫時保留上次結果",
-      "loadFailed": "請求日誌加載失敗，請點擊頂部刷新重試",
       "noRecordsMatchTheseFilters": "所選條件下暫無記錄"
     },
     "page": {
@@ -197,13 +195,10 @@
       "changesInUsageOverTime": "用量隨時間的變化",
       "requestHealthTimeline": "請求健康時間線",
       "updated": "更新於 {asOfDisplay}",
-      "temporarilyRetainLastResult": "，暫時保留上次結果",
-      "clickRefreshAtTopToTryAgain": "，請點擊頂部刷新重試",
       "description": "查看請求用量、性能趨勢與調用錯誤記錄",
       "dateRangeLabel": "統計日期範圍，僅可選擇最近 31 天",
       "requestDetails": "請求記錄",
       "recordsDescription": "成功請求與失敗請求記錄",
-      "failedToLoad": "加載失敗：{error}",
       "noRequestsMatchTheseFilters": "所選條件下暫無請求記錄",
       "viewErrorDetails": "查看錯誤詳情",
       "viewUsageRecordDetails": "查看使用記錄詳情"
