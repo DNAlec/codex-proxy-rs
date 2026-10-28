@@ -161,7 +161,6 @@ impl CodexProvider {
                 attempt: &context,
                 session_affinity: request.session_affinity.as_ref(),
                 model,
-                requires_oauth: false,
             })
             .await
             .map_err(map_selection_error)?;

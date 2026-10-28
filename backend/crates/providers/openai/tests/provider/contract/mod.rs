@@ -1,11 +1,11 @@
 //! OpenAI 执行合同测试入口，以及协议转换与发送前校验测试
 
+mod account_eligibility;
 mod account_isolation;
 mod capacity;
 mod cookies;
 mod correlation;
 mod error_details;
-mod image_account_eligibility;
 mod image_model_access;
 mod model_account_eligibility;
 mod outbound;

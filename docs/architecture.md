@@ -582,9 +582,6 @@ client，OIDC 的 JWKS 缓存与单飞归属对应出口状态。自动刷新提
 客户端据此开放原生生图工具，图片生成和编辑由 Images 路由处理。
 这只解决客户端能力识别；模型能力、客户端限制和上游账号的实际生图权限仍分别检查
 
-OpenAI Provider 将 OAuth 套餐资格作为 Images 选号条件，复用账号持久事实，
-在获取租约前与冻结的模型黑白名单共同过滤候选；亲和与重试沿用同一资格检查
-
 `X-OpenAI-Actor-Authorization` 是客户端能力标记，不是账号凭据。API 解码和 OpenAI Provider
 都过滤该 header，网关继续校验 Client Key，上游认证由服务端账号产生。
 客户端配置示例维护在 [部署文档](../deploy/README.md#客户端配置)
@@ -705,6 +702,9 @@ OpenAI Provider 在选号时排除 Grok 模型的 ChatGPT OAuth 账号，API Key
 由 `RuntimeAccountDirectory` / `FrozenAccountScope` 随配置快照冻结。Provider 在额度、亲和与租约之前
 按映射后的上游模型筛选账号；重试和 fallback 使用同一冻结政策。上游目录和凭据不承载或改写该政策。
 客户端目录的政策过滤判断范围内整个候选池，原生模型对象仍由 Provider 独占解释
+
+OpenAI Provider 的账号资格模块统一解释请求类型、认证与套餐限制，Images 和 Live 共用 OAuth 套餐检查。
+资格检查复用账号持久事实，在获取租约前与冻结的模型黑白名单共同过滤候选；亲和与重试沿用同一检查
 
 账号编辑在一个事务中更新调度事实，批量更新只应用显式提供的字段。导入与首次 OAuth 可携带统一账号设置，由 Admin 传递给 Store，
 与凭据在同一事务中提交；Provider 仍独占凭据解析。未附带设置的导入、重新授权和后台刷新保留已有分组、
