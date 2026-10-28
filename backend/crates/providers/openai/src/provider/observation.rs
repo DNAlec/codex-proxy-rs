@@ -432,7 +432,7 @@ pub(super) fn openai_response_request_summary(
     let body = request.body();
     let input = body.get("input");
     let tools = body.get("tools");
-    let semantics = request.semantics();
+    let semantics = request.semantics(None);
     json!({
         "model": request.model(),
         "stream": request.stream(),

@@ -10257,6 +10257,183 @@ fn request_observation_preserves_the_raw_reasoning_effort() {
 }
 
 #[tokio::test]
+async fn reasoning_effort_observation_follows_configuration_updates_across_continuations() {
+    fn completed(index: usize) -> Value {
+        json!({"type":"response.completed","response":{
+            "id":format!("resp_effort_{index}"),"model":"gpt-5.4","status":"completed",
+            "output":[],"reasoning":{"effort":if index == 4 { "high" } else { "medium" }},
+            "usage":{"input_tokens":1,"output_tokens":1,"total_tokens":2}
+        }})
+    }
+
+    for use_websocket in [false, true] {
+        let store = Arc::new(MemoryAccountStore::default());
+        create_account(&store, "acct_provider_contract").await;
+        let http = MockServer::start().await;
+        let count = std::sync::atomic::AtomicUsize::new(0);
+        Mock::given(method("POST"))
+            .and(path("/codex/responses"))
+            .respond_with(move |_: &wiremock::Request| {
+                let index = count.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                ResponseTemplate::new(200)
+                    .insert_header("content-type", "text/event-stream")
+                    .set_body_string(format!("data: {}\n\n", completed(index)))
+            })
+            .mount(&http)
+            .await;
+        let (base_url, websocket_server) = if use_websocket {
+            let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let base_url = format!("http://{}", listener.local_addr().unwrap());
+            let server = tokio::spawn(async move {
+                let (socket, _) = listener.accept().await.unwrap();
+                let mut websocket = accept_codex_test_websocket(socket).await;
+                let mut frames = Vec::new();
+                for index in 0..5 {
+                    let message = websocket.next().await.unwrap().unwrap();
+                    let frame: Value = serde_json::from_str(message.to_text().unwrap()).unwrap();
+                    assert_eq!(frame["type"], "response.create");
+                    frames.push(frame);
+                    websocket
+                        .send(Message::Text(completed(index).to_string().into()))
+                        .await
+                        .unwrap();
+                }
+                frames
+            });
+            (base_url, Some(server))
+        } else {
+            (http.uri(), None)
+        };
+        let provider = provider_with_base_url(&store, base_url);
+        let client_key = ClientApiKeyId::new("key_openai_contract").unwrap();
+        let mut session_state = Some(
+            ProviderSessionState::new(
+                "openai",
+                json!({
+                    "account_id":"acct_provider_contract",
+                    "conversation_id":"effort-observation",
+                    "continuation_scope":if use_websocket { "connection_local" } else { "persisted" },
+                })
+                .as_object()
+                .unwrap()
+                .clone(),
+            )
+            .unwrap(),
+        );
+        let mut originals = Vec::new();
+        for (index, (baseline, update, expected)) in [
+            ("medium", Some("high"), "high"),
+            ("medium", None, "high"),
+            ("medium", Some("low"), "low"),
+            ("medium", None, "medium"),
+            ("high", None, "high"),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let mut input = Vec::new();
+            if let Some(effort) = update {
+                input.push(json!({"type":"configuration_update","reasoning":{"effort":effort}}));
+            }
+            input.push(json!({"type":"message","role":"user","content":"next turn"}));
+            let mut body = json!({
+                "model":"gpt-5.4","input":input,"reasoning":{"effort":baseline},
+                "session_id":"effort-observation","store":!use_websocket,
+            });
+            let previous = (index > 0 && index != 3).then(|| format!("resp_effort_{}", index - 1));
+            if let Some(previous) = &previous {
+                body["previous_response_id"] = json!(previous);
+            }
+            let mut protocol_context =
+                Map::from_iter([("use_websocket".to_owned(), json!(use_websocket))]);
+            if use_websocket {
+                protocol_context.insert(
+                    "downstream_websocket_connection_id".to_owned(),
+                    json!("ws_effort"),
+                );
+            }
+            let mut generate = GenerateRequest::from_protocol_payload(
+                ProtocolPayload::json_object("openai", body.as_object().unwrap().clone())
+                    .unwrap()
+                    .with_context(protocol_context),
+            );
+            if let Some(state) = session_state.take() {
+                generate = generate.with_provider_session_state(state);
+            }
+            let operation = Operation::Generate(generate);
+            let observation = provider.request_observation(&operation, &client_key);
+            assert_eq!(observation.reasoning_effort.as_deref(), Some(expected));
+            let binding = previous.as_ref().map(|previous| {
+                ContinuationBinding::Pinned(NativeContinuationPin::new(
+                    PreviousResponseId::new(previous),
+                    PreviousResponseId::new(previous),
+                    client_key.clone(),
+                    ProviderKind::new("openai").unwrap(),
+                    ProviderAccountId::new("acct_provider_contract").unwrap(),
+                ))
+            });
+            let context = AttemptContext::new(
+                RequestAttemptContext::new(
+                    ModelRequestId::new(format!("req_effort_{index}")).unwrap(),
+                    client_key.clone(),
+                ),
+                NonZeroU32::new(1).unwrap(),
+                SystemTime::now() + Duration::from_secs(30),
+                account_policy(),
+                AccountAttemptContext::new(BTreeSet::new(), None, None)
+                    .with_account_scope(contract_account_scope()),
+                binding,
+                CancellationToken::new(),
+            )
+            .with_continuation_attempt(if previous.is_some() {
+                ContinuationAttempt::Native
+            } else {
+                ContinuationAttempt::None
+            });
+            let mut stream = Arc::clone(&provider)
+                .execute(planned_request("openai", operation), context)
+                .await
+                .unwrap();
+            while let Some(event) = timeout(Duration::from_secs(5), stream.next())
+                .await
+                .unwrap()
+            {
+                let event = event.unwrap_or_else(|error| {
+                    panic!("use_websocket={use_websocket}, turn={index}: {error:?}")
+                });
+                if let Some(update) = event.session_update() {
+                    session_state = Some(update.clone());
+                }
+            }
+            assert!(session_state.is_some());
+            originals.push(body);
+        }
+        let forwarded = if let Some(server) = websocket_server {
+            timeout(Duration::from_secs(5), server)
+                .await
+                .unwrap()
+                .unwrap()
+        } else {
+            http.received_requests()
+                .await
+                .unwrap()
+                .iter()
+                .map(captured_request_body)
+                .collect()
+        };
+        assert_eq!(forwarded.len(), originals.len());
+        for (forwarded, original) in forwarded.iter().zip(&originals) {
+            assert_eq!(forwarded["input"], original["input"]);
+            assert_eq!(forwarded["reasoning"], original["reasoning"]);
+            assert_eq!(
+                forwarded.get("previous_response_id"),
+                original.get("previous_response_id")
+            );
+        }
+    }
+}
+
+#[tokio::test]
 async fn provider_compiles_catalog_presentation_for_codex_models() {
     let store = Arc::new(MemoryAccountStore::default());
     create_account(&store, "acct_presentation").await;
