@@ -471,7 +471,7 @@
       "codexDesktopMinimumVersion": "Codex Desktop minimum version",
       "onlyCheckDesktopVersionEG": "Only check the desktop version, e.g. 26.825.51511",
       "codexCliMinimumVersion": "Codex CLI minimum version",
-      "minimumVersionHelp": "Checks standalone CLI versions only, for example 0.152.0"
+      "minimumVersionHelp": "Official clients' Core version (CLI, IDE, SDK), e.g. 0.152.0"
     },
     "privacy": {
       "preview": {

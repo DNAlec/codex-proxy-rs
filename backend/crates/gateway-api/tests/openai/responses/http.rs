@@ -2949,6 +2949,69 @@ struct SessionExecution {
 }
 
 #[tokio::test]
+async fn official_core_clients_should_be_version_checked_before_starting_responses() {
+    let admin = crate::admin::AdminTestFixture::new().await.services;
+    for product in [
+        "codex-tui",
+        "codex_exec",
+        "codex_vscode",
+        "codex_sdk_ts",
+        "codex_python_sdk",
+    ] {
+        for (version, allowed) in [("0.158.0", false), ("0.162.0", true)] {
+            let trace = Arc::new(Trace::default());
+            let execution = Arc::new(SessionExecution {
+                client: authenticated_client_with_min_versions(
+                    "sk_version_test",
+                    None,
+                    Some("0.162.0"),
+                ),
+                session: Mutex::new(Some(Box::new(FakeSession::streaming(
+                    Arc::clone(&trace),
+                    vec![
+                        NextStep::Event(delivery(
+                            started(),
+                            CommitRequirement::CommitBeforeDelivery,
+                        )),
+                        NextStep::Event(delivery(completed(), CommitRequirement::AlreadyCommitted)),
+                        NextStep::FinalizeSuccess,
+                    ],
+                )))),
+                middleware: None,
+            });
+            let request = Request::post("/v1/responses")
+                .header(AUTHORIZATION, "Bearer sk_version_test")
+                .header("user-agent", format!(
+                    "{product}/{version} (Mac OS 26.6.2; arm64) Apple_Terminal ({product}; 0.165.0)"
+                ))
+                .body(Body::from(json!({"model": "model-a", "input": "synthetic", "stream": true}).to_string()))
+                .unwrap();
+            let response = crate::openai::api_router_with_admin_and_execution(
+                admin.clone(),
+                execution.clone(),
+            )
+            .oneshot(request)
+            .await
+            .unwrap();
+            let status = response.status();
+            let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+            if allowed {
+                assert_eq!(status, StatusCode::OK, "{product}/{version}");
+                assert!(String::from_utf8_lossy(&body).contains("event: response.completed\n"));
+                assert!(trace.snapshot().contains(&"commit"));
+            } else {
+                assert_eq!(status, StatusCode::UPGRADE_REQUIRED, "{product}/{version}");
+                let value: Value = serde_json::from_slice(&body).unwrap();
+                assert_eq!(value["error"]["code"], "client_version_too_old");
+                assert_eq!(value["error"]["current_version"], version);
+                assert_eq!(value["error"]["min_version"], "0.162.0");
+                assert!(execution.session.lock().unwrap().is_some());
+            }
+        }
+    }
+}
+
+#[tokio::test]
 async fn chatgpt_remote_responses_should_only_skip_missing_desktop_versions() {
     let admin = crate::admin::AdminTestFixture::new().await.services;
     for name in [

@@ -471,7 +471,7 @@
       "codexDesktopMinimumVersion": "Codex Desktop 最低版本",
       "onlyCheckDesktopVersionEG": "只檢查桌面端應用版本，例如 26.825.51511",
       "codexCliMinimumVersion": "Codex CLI 最低版本",
-      "minimumVersionHelp": "只檢查獨立終端版本，例如 0.152.0"
+      "minimumVersionHelp": "官方 CLI、IDE、SDK 等客戶端的 Core 版本，例如 0.152.0"
     },
     "privacy": {
       "preview": {
