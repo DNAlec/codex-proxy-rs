@@ -515,16 +515,17 @@ OpenAI 模型目录用于发现，不因目录缺项拒绝请求；管理员配�
   不凭 canonical 增量补造内容，也不让 SSE/WS 转发额外保存整份输出
 - Responses、Images 与 standalone Search 的业务扩展头保留原始多值字节。API 负责剥离鉴权、账号身份和 HTTP 传输字段，
   并提取会话语义；`gateway-protocol` 共享 HTTP 传输与网关链路字段分类。客户端兼容规则集中在
-  `providers/openai/src/transport/downstream/`：`headers.rs` 管理下游环境头和已提取语义的头部别名，
-  `body.rs` 管理已知顶层参数的过滤、缺省值补齐和已确认不兼容的 `input` 形状适配；兼容基准为 Codex Core/Desktop 请求协议，
-  不持有账号身份保护或会话规范化逻辑。
+  `providers/openai/src/compat/`，与上游缺陷补偿统一管理：`headers.rs` 管理下游环境头和已提取语义的头部别名，
+  `request.rs` 管理参数过滤、缺省值及请求形状适配；兼容基准为 Codex Core/Desktop 请求协议。
+  `search_history.rs` 处理搜索历史缺少工具声明的临时补偿。
+  `compat` 只消费请求正文和协议头，不依赖 Provider 或 transport 的执行实现，不持有身份、会话或连接状态。
   Provider 在 `transport/request.rs` 解码不透明头时组合兼容、身份与 HTTP 规则，
-  同时调用不依赖账号的正文兼容规则。`body.rs` 中非官方客户端及跨客户端历史回填兼容的入口，
+  同时调用不依赖账号的正文兼容规则。非官方客户端及跨客户端历史回填兼容的入口，
   由 Provider 在选定 Codex/OAuth 账号后、HTTP/WS 分流前调用；API Key 上游跳过该入口。
+  长期协议适配与临时缺陷补偿按文件区分；临时补偿注明外部依据、适用范围和移除条件，直连验证修复后清理对应规则与合同场景。
   `transport/headers.rs` 负责上游身份保护和官方头组装。
   会话别名只规范化请求头，不清除正文身份字段；未知业务扩展与响应诊断头不受影响，字段见
-  [Responses 合同](api.md#3-openai-数据面与模型目录)。Grok 专属请求标记和已知指令开场白的兼容只在
-  `downstream/grok.rs` 内判断，且仅用于 Codex/OAuth 上游；普通请求的提示词、工具及业务正文不做品牌清洗
+  [Responses 合同](api.md#3-openai-数据面与模型目录)
 - Live 共用 OpenAI 的头部身份、下游环境和传输边界，业务扩展不使用固定白名单。
   引导、sideband 与 hangup 由 Provider 在选定或加载钉住账号后统一处理出站关联标识；
   API 保留原始入站事实，Core 只传递头值字节和通话归属，具体合同见 [Codex Live 语音通话](api.md#codex-live-语音通话)

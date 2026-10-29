@@ -437,11 +437,6 @@ OpenAI Provider 的 Responses 上游编码会移除 Codex 不接受的顶层 `te
 不删除工具参数 schema、输入内容或 `client_metadata` 内的同名业务字段；其他未知字段继续透传。
 `prompt_cache_key` 不用于补造会话或线程请求头；客户端未提供缓存键、会话或线程身份时保持缺省
 
-Grok 客户端经 Codex/OAuth 上游执行时，仅在带有 `x-grok-model-override`、`x-grok-turn-idx` 或
-`x-grok-session-id` 标记的请求中，移除 `developer` 消息首个文本块开头的
-`You are Grok released by xAI.`。其余内容、用户消息和顶层 `instructions` 保留；
-普通 Codex 请求与 API Key 上游不应用这条兼容规则
-
 Codex/OAuth 上游的历史回填按字段形状兼容，不以 User-Agent 品牌区分：显式 `type: "reasoning"`
 的 `input` 项移除顶层 `status`；该项具有非空字符串 `encrypted_content` 时，还会移除非空数组
 `content`。其他字段及顺序保持不变，缺少非空加密载荷的明文历史由上游判定。

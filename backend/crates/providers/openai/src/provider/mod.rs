@@ -100,7 +100,6 @@ use crate::transport::{
     CodexBackendTransport, CodexClientError, CodexRateLimitUpdates, CodexRequestContext,
     CodexResponseMetadata, CodexResponseMetadataUpdates, CodexTransportMetrics,
     CodexUpstreamDiagnostics, CodexWebSocketPool, endpoint_url,
-    normalize_selected_codex_downstream_body,
 };
 
 mod execution;
@@ -962,9 +961,10 @@ impl CodexProvider {
             crate::credential::CodexRuntimeAuthentication::OAuth(_)
         );
         if codex_oauth {
-            normalize_selected_codex_downstream_body(
-                &mut upstream_request,
-                generate.protocol_payload().context(),
+            let responses_lite = upstream_request.responses_lite.as_deref() == Some("true");
+            crate::compat::normalize_selected_codex_downstream_body(
+                upstream_request.body_mut(),
+                responses_lite,
                 &middleware_headers,
                 context.request_id().as_str(),
             );
