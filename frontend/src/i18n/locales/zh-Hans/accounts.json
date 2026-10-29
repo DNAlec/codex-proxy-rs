@@ -118,7 +118,6 @@
       "noModelsAvailable": "没有可测试模型"
     },
     "credentials": {
-      "wsFirst": "WS 优先",
       "accountName": "账号名称",
       "enterUpstreamName": "输入上游名称",
       "baseUrlHelp": "填写 API 前缀，接口路径会自动追加",
@@ -126,7 +125,7 @@
       "apiKeyPlaceholder": "留空保留当前密钥",
       "enterUpstreamKey": "输入上游密钥",
       "transportLabel": "传输方式",
-      "webSocketHelp": "WS 优先需要上游支持 Responses WebSocket",
+      "webSocketHelp": "WS 需要上游支持 Responses WebSocket",
       "nameRequired": "请输入账号名称",
       "validation": {
         "urlLength": "上游 API 地址不能超过 2048 个字符",
@@ -163,7 +162,6 @@
     "editor": {
       "title": "编辑账号",
       "transportLabel": "上游传输方式",
-      "upstreamConnection": "上游连接",
       "loadError": "上游设置读取失败",
       "notesHelp": "最多 500 字，留空可清除备注",
       "oauthUnavailable": "该账号没有 OAuth 上游设置",

@@ -59,6 +59,7 @@ const selectedGroupIds = defineModel<string[]>('selectedGroupIds', { required: t
           class="min-w-0 flex-1"
           :account="account"
           size="lg"
+          show-notes
         />
         <div class="flex shrink-0 items-center gap-3">
           <AccountPlanBadge :authentication-kind="account.authenticationKind" :plan-type="account.planType" :plan-type-display="account.planTypeDisplay" size="sm" />
@@ -73,12 +74,7 @@ const selectedGroupIds = defineModel<string[]>('selectedGroupIds', { required: t
         <ZSegmented v-model="oauthTransport" :aria-label="t('accounts.editor.transportLabel')" :options="transportOptions" :disabled="saving || !configurationReady" />
       </ZFormItem>
 
-      <section v-if="isOpenAiApiKeyAccount(account)" class="grid gap-4">
-        <h3 class="m-0 text-cp font-heavy text-cp-text">
-          {{ t('accounts.editor.upstreamConnection') }}
-        </h3>
-        <AccountApiKeyFields v-model="apiKey" editing :disabled="saving || !configurationReady" />
-      </section>
+      <AccountApiKeyFields v-if="isOpenAiApiKeyAccount(account)" v-model="apiKey" editing :disabled="saving || !configurationReady" />
 
       <AccountSettingsFields
         v-model:enabled="enabled"

@@ -196,7 +196,7 @@ watch(search, () => {
             <ZPopover v-if="item.unavailable" class="mr-1 shrink-0" trigger="hover-click" placement="top" role="tooltip">
               <template #reference="{ open, id }">
                 <ZIconButton
-                  class="bg-transparent! hover:bg-transparent! active:bg-transparent!"
+                  variant="link"
                   size="small"
                   :aria-label="t('accounts.modelAccess.notInCurrentModelCatalog', { id: item.id })"
                   :aria-describedby="open ? id : undefined"
