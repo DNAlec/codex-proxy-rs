@@ -176,7 +176,10 @@ export function useAccountConnectionTest(options: { reload: () => Promise<unknow
   const connectionTestPrompt = shallowRef('Reply with exactly OK.')
   const connectionTestReasoningEffort = shallowRef('')
   const connectionTestReasoningOptions = computed(() => [
-    { label: t('accounts.connectionTest.defaultReasoning'), value: '' },
+    {
+      label: t('accounts.connectionTest.defaultReasoning'),
+      value: '',
+    },
     ...(connectionTestModelOptions.value.find(model => model.value === connectionTestSelectedModel.value)?.reasoningEfforts ?? [])
       .map(effort => ({ label: effort, value: effort })),
   ])
@@ -353,7 +356,9 @@ export function useAccountConnectionTest(options: { reload: () => Promise<unknow
     }
     if (event.type === 'request') {
       const effort = event.payload?.reasoning?.effort
-      setConnectionTestLog('request', effort ? t('accounts.connectionTest.events.requestWithReasoning', { effort }) : t('accounts.connectionTest.events.request'), 'info', connectionTestRequestText(event.payload), event)
+      setConnectionTestLog('request', effort
+        ? t('accounts.connectionTest.events.requestWithReasoning', { effort })
+        : t('accounts.connectionTest.events.request'), 'info', connectionTestRequestText(event.payload), event)
       return
     }
     if (event.type === 'status' && event.text) {
@@ -486,7 +491,10 @@ export function useAccountConnectionTest(options: { reload: () => Promise<unknow
     connectionTestStartedAt.value = ''
     connectionTestFinishedAt.value = ''
     testingConnections.add(account.id)
-    const run: ConnectionTestRun = { accountId: account.id, controller: new AbortController() }
+    const run: ConnectionTestRun = {
+      accountId: account.id,
+      controller: new AbortController(),
+    }
     connectionTestRun = run
     try {
       const response = await testAccountConnection({
