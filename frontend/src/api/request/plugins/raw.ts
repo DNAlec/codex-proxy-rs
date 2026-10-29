@@ -1,4 +1,5 @@
 import type { RequestContext, RequestNext } from './index'
+import { t } from '@/i18n'
 import { ApiError, normalizeApiResponseError } from './error'
 
 export interface RawResponseMeta {
@@ -50,7 +51,7 @@ export async function rawPlugin(context: RequestContext, next: RequestNext) {
     }
     const body = response.data as ArrayBuffer
     if (body.byteLength > options.maximumBytes)
-      throw new ApiError('响应内容超过大小限制', 502, undefined, rawHeader(response.headers, 'x-request-id'), 'http')
+      throw new ApiError(t('common.errors.responseTooLarge'), 502, undefined, rawHeader(response.headers, 'x-request-id'), 'http')
     return {
       ...response,
       data: {
@@ -69,7 +70,9 @@ export async function rawPlugin(context: RequestContext, next: RequestNext) {
   if (normalized)
     throw normalized
   throw new ApiError(
-    response.status >= 400 ? `请求失败（HTTP ${response.status}）` : '服务返回了不受支持的响应',
+    response.status >= 400
+      ? t('common.errors.http', { status: response.status })
+      : t('common.errors.unsupportedResponse'),
     response.status,
     undefined,
     rawHeader(response.headers, 'x-request-id'),
@@ -90,7 +93,7 @@ async function readErrorBody(body: ReadableStream<Uint8Array> | null, maximumByt
         break
       length += value.byteLength
       if (length > maximumBytes)
-        throw new ApiError('响应内容超过大小限制', 502, undefined, undefined, 'http')
+        throw new ApiError(t('common.errors.responseTooLarge'), 502, undefined, undefined, 'http')
       chunks.push(value)
     }
   }
@@ -110,8 +113,12 @@ function rawHeader(headers: unknown, name: string) {
   if (!headers || typeof headers !== 'object')
     return undefined
   const source = headers as { get?: (key: string) => unknown, [key: string]: unknown }
-  const value = typeof source.get === 'function' ? source.get(name) : source[name]
-  return typeof value === 'string' && value ? value : undefined
+  const value = typeof source.get === 'function'
+    ? source.get(name)
+    : source[name]
+  return typeof value === 'string' && value
+    ? value
+    : undefined
 }
 
 function decodeRawEnvelope(body: ArrayBuffer): unknown {

@@ -409,6 +409,7 @@ async fn copying_builtin_prices_keeps_cache_read_and_write_fallback_costs() {
         "gpt-4o",
         "gpt-6-astra",
         "gpt-6.1-sol",
+        "gpt-6.1-terra",
         "gpt-6-sol",
         "gpt-6-luna",
     ] {
@@ -472,9 +473,17 @@ async fn openai_admin_provider_exposes_live_wire_profile_and_validated_billing()
         profile
             .attributes
             .iter()
-            .find(|attribute| attribute.label == "客户端标识")
+            .find(|attribute| attribute.key == "client_identifier")
             .map(|attribute| attribute.value.as_str()),
         Some("Codex Desktop; 1.2026.190")
+    );
+    assert_eq!(
+        profile
+            .attributes
+            .iter()
+            .find(|attribute| attribute.key == "version_policy")
+            .map(|attribute| attribute.value.as_str()),
+        Some("fixed")
     );
     assert!(profile.release.is_none());
     let billing = admin
@@ -2166,28 +2175,12 @@ impl ProviderCooldownPort for TestCooldown {
         Box::pin(async { Ok(false) })
     }
 
-    fn record_capacity_failure<'a>(
-        &'a self,
-        _account_id: &'a ProviderAccountId,
-        _window: Duration,
-        _in_flight: u32,
-    ) -> BoxFuture<'a, Result<u32, ProviderStoreError>> {
-        Box::pin(async { Ok(0) })
-    }
-
     fn clear_after_success<'a>(
         &'a self,
         _account_id: &'a ProviderAccountId,
         _through_revision: gateway_core::account::CredentialRevision,
     ) -> BoxFuture<'a, Result<(), ProviderStoreError>> {
         Box::pin(async { Ok(()) })
-    }
-
-    fn capacity_peak_in_flight<'a>(
-        &'a self,
-        _account_id: &'a ProviderAccountId,
-    ) -> BoxFuture<'a, Result<Option<u32>, ProviderStoreError>> {
-        Box::pin(async { Ok(None) })
     }
 }
 
@@ -2450,7 +2443,7 @@ mod errors {
     #[tokio::test]
     async fn manual_refresh_preserves_banned_evidence_without_promoting_401_to_terminal() {
         for (status, kind, message) in [
-            (400, Kind::Invalid, "OpenAI 账号已被停用，请检查账号状态"),
+            (400, Kind::Invalid, "Codex 账号已被停用，请检查账号状态"),
             (
                 401,
                 Kind::BadGateway,

@@ -66,6 +66,7 @@ pub enum CodexFailureCategory {
 
 /// 一次已分类的上游拒绝及其可持久化事实
 pub struct CodexUpstreamFailure {
+    pub(crate) upstream_fields: gateway_core::upstream::UpstreamFailureFields,
     pub(crate) status: Option<StatusCode>,
     pub(crate) code: Option<String>,
     pub(crate) client_message: Option<String>,
@@ -79,6 +80,7 @@ pub struct CodexUpstreamFailure {
     pub(crate) usage_limit_resets_at: Option<i64>,
     pub(crate) retry_after_seconds: Option<u64>,
     pub(crate) request_id: Option<String>,
+    pub(crate) response_origin: Option<url::Url>,
     pub(crate) set_cookie_headers: Vec<String>,
     pub(crate) rate_limit_headers: Vec<(String, String)>,
     pub(crate) send_phase: CodexUpstreamSendPhase,
@@ -101,7 +103,8 @@ impl CodexUpstreamFailure {
         rate_limit_headers: &[(String, String)],
         send_phase: CodexUpstreamSendPhase,
     ) -> Self {
-        let fields = ParsedUpstreamError::from_http_response(body);
+        let mut fields = ParsedUpstreamError::from_http_response(body);
+        fields.upstream_fields.status = Some(status.as_u16());
         let category = classify_upstream_failure(
             UpstreamFailureSource::HttpResponse,
             Some(status),
@@ -112,6 +115,7 @@ impl CodexUpstreamFailure {
         );
         Self {
             status: Some(status),
+            upstream_fields: fields.upstream_fields,
             code: fields.code.clone(),
             client_message: fields.client_message,
             client_code: fields.code,
@@ -124,6 +128,7 @@ impl CodexUpstreamFailure {
                 .flatten(),
             retry_after_seconds,
             request_id: diagnostics.request_id.clone(),
+            response_origin: diagnostics.response_origin.clone(),
             set_cookie_headers: set_cookie_headers.to_vec(),
             rate_limit_headers: rate_limit_headers.to_vec(),
             send_phase,
@@ -139,6 +144,12 @@ impl CodexUpstreamFailure {
         send_phase: CodexUpstreamSendPhase,
     ) -> Self {
         let fields = ParsedUpstreamError {
+            upstream_fields: gateway_core::upstream::UpstreamFailureFields {
+                status: failure.explicit_status_code,
+                code: failure.upstream_code.clone(),
+                error_type: failure.upstream_type.clone(),
+                message: failure.upstream_message.clone(),
+            },
             code: failure.upstream_code.clone(),
             error_type: failure.upstream_type.clone(),
             message: failure.message.clone(),
@@ -158,6 +169,7 @@ impl CodexUpstreamFailure {
         );
         Self {
             status,
+            upstream_fields: fields.upstream_fields,
             code: fields.code.clone(),
             client_message: Some(fields.message),
             client_code: fields.code,
@@ -171,6 +183,7 @@ impl CodexUpstreamFailure {
                 .request_id
                 .clone()
                 .or_else(|| diagnostics.request_id.clone()),
+            response_origin: diagnostics.response_origin.clone(),
             set_cookie_headers: set_cookie_headers.to_vec(),
             rate_limit_headers: rate_limit_headers.to_vec(),
             send_phase,
@@ -220,6 +233,7 @@ impl CodexUpstreamFailure {
 }
 
 struct ParsedUpstreamError {
+    upstream_fields: gateway_core::upstream::UpstreamFailureFields,
     code: Option<String>,
     error_type: Option<String>,
     message: String,
@@ -231,6 +245,12 @@ impl ParsedUpstreamError {
     fn from_http_response(body: &str) -> Self {
         let Ok(value) = serde_json::from_str::<Value>(body) else {
             return Self {
+                upstream_fields: gateway_core::upstream::UpstreamFailureFields {
+                    status: None,
+                    code: None,
+                    error_type: None,
+                    message: None,
+                },
                 code: None,
                 error_type: None,
                 message: body.to_owned(),
@@ -244,6 +264,20 @@ impl ParsedUpstreamError {
             .or_else(|| value.get("detail"))
             .unwrap_or(&value);
         let code_value = error.get("code").or_else(|| value.get("code"));
+        let upstream_fields = gateway_core::upstream::UpstreamFailureFields {
+            status: None,
+            code: code_value.and_then(Value::as_str).map(str::to_owned),
+            error_type: error
+                .get("type")
+                .or_else(|| value.get("type"))
+                .and_then(Value::as_str)
+                .map(str::to_owned),
+            message: error
+                .get("message")
+                .or_else(|| value.get("message"))
+                .and_then(Value::as_str)
+                .map(str::to_owned),
+        };
         let error_type = error
             .get("type")
             .or_else(|| value.get("type"))
@@ -267,6 +301,7 @@ impl ParsedUpstreamError {
             .and_then(Value::as_i64)
             .filter(|seconds| DateTime::<Utc>::from_timestamp(*seconds, 0).is_some());
         Self {
+            upstream_fields,
             code,
             error_type,
             message,
@@ -282,16 +317,43 @@ enum UpstreamFailureSource {
     SseFailure,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Clone, Default, PartialEq, Eq)]
 pub struct CodexUpstreamDiagnostics {
     pub status_code: Option<u16>,
     pub request_id: Option<String>,
     pub identity_authorization_error: Option<String>,
     pub identity_error_code: Option<String>,
     pub trace_headers: Vec<(String, String)>,
+    /// 实际响应所属 URL；WebSocket 沿用实际 opening，不能使用本次候选目标
+    pub response_origin: Option<url::Url>,
+}
+
+impl std::fmt::Debug for CodexUpstreamDiagnostics {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("CodexUpstreamDiagnostics")
+            .field("status_code", &self.status_code)
+            .field("request_id", &self.request_id)
+            .field(
+                "identity_authorization_error",
+                &self.identity_authorization_error,
+            )
+            .field("identity_error_code", &self.identity_error_code)
+            .field("trace_headers", &self.trace_headers)
+            .field(
+                "response_origin",
+                &self.response_origin.as_ref().map(|_| "<redacted>"),
+            )
+            .finish()
+    }
 }
 
 impl CodexUpstreamDiagnostics {
+    pub(crate) fn with_response_origin(mut self, url: Option<url::Url>) -> Self {
+        self.response_origin = url;
+        self
+    }
+
     pub(crate) fn error_event_request_id(value: &Value) -> Option<String> {
         let headers = value.get("headers")?.as_object()?;
         let mut mapped = HeaderMap::new();
@@ -326,6 +388,7 @@ impl CodexUpstreamDiagnostics {
             identity_error_code: header_value(headers, IDENTITY_ERROR_JSON_HEADER)
                 .and_then(|encoded| decode_identity_error_code(&encoded)),
             trace_headers: trace_headers(headers),
+            response_origin: None,
         }
     }
 
@@ -473,7 +536,11 @@ fn classify_upstream_failure(
     if status == Some(StatusCode::FORBIDDEN) && is_cloudflare_challenge(&body) {
         return CodexFailureCategory::CloudflareChallenge;
     }
-    if status == Some(StatusCode::NOT_FOUND) && body.trim().is_empty() {
+    // 流内错误只传结构化字段，不能把未传入的 body 当成 HTTP 空响应
+    if matches!(source, UpstreamFailureSource::HttpResponse)
+        && status == Some(StatusCode::NOT_FOUND)
+        && body.trim().is_empty()
+    {
         return CodexFailureCategory::CloudflarePathBlocked;
     }
     let structured_failure_signals = [code.as_str(), error_type.as_str()];

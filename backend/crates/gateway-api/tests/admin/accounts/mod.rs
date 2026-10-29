@@ -69,7 +69,7 @@ mod personal_info {
     fn personal_info_response_preserves_unknown_subscription_and_profile_error() {
         let response = AccountPersonalInfoData::from((
             AccountPersonalInfo {
-                profile: Err(AdminError::unavailable("Provider 服务暂不可用")),
+                profile: Err(AdminError::unavailable("服务商暂不可用")),
                 subscription: None,
             },
             gateway_api::TimePresenter::new(Default::default()),
@@ -78,7 +78,7 @@ mod personal_info {
             serde_json::to_value(response).unwrap(),
             json!({
                 "profile": null,
-                "profileError": "Provider 服务暂不可用",
+                "profileError": "服务商暂不可用",
                 "subscription": null,
             })
         );
@@ -476,13 +476,13 @@ fn single_update_should_reject_oversized_notes_and_control_characters() {
 }
 
 mod response {
-    use gateway_api::admin::accounts::AccountUsageView;
+    use gateway_api::admin::accounts::{AccountUsageView, AccountUsageWindowKind};
     use gateway_api::admin::presenter::format_decimal_currency;
 
     #[test]
     fn account_usage_view_should_keep_unobserved_numbers_null() {
         let view = AccountUsageView {
-            window_label_display: "周/月额度窗口".to_owned(),
+            window_kind: AccountUsageWindowKind::Quota,
             request_count: None,
             request_count_display: "-".to_owned(),
             input_tokens: None,
@@ -516,7 +516,7 @@ mod response {
             models: Vec::new(),
         };
         let value = serde_json::to_value(view).expect("serialize account usage");
-        assert_eq!(value["windowLabelDisplay"], "周/月额度窗口");
+        assert_eq!(value["windowKind"], "quota");
         assert!(value["inputTokens"].is_null());
         assert!(value["totalTokens"].is_null());
         assert!(value["reasoningOutputTokens"].is_null());

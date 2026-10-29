@@ -36,16 +36,25 @@ export function useUsageRecordsTable(options: UseUsageRecordsTableOptions) {
   const filterParams = computed(() => {
     const value = filterValue.value.trim() || undefined
     return {
-      clientApiKeyName: filterField.value === 'key' ? value : undefined,
-      accountName: filterField.value === 'account' ? value : undefined,
-      model: filterField.value === 'model' ? value : undefined,
+      clientApiKeyName: filterField.value === 'key'
+        ? value
+        : undefined,
+      accountName: filterField.value === 'account'
+        ? value
+        : undefined,
+      model: filterField.value === 'model'
+        ? value
+        : undefined,
     }
   })
   const providerQuery = shallowRef('')
   let tableParams = snapshot()
   const table = useStablePagedQuery({
     initialPageSize: 10,
-    load: (pagination, requestOptions) => getUsageRecords({ ...pagination, ...tableParams }, requestOptions),
+    load: (pagination, requestOptions) => getUsageRecords({
+      ...pagination,
+      ...tableParams,
+    }, requestOptions),
   })
   const { currentPage, pageSize, loading, error, items: records, total: totalRecords } = table
   const refreshingList = shallowRef(false)
@@ -56,7 +65,9 @@ export function useUsageRecordsTable(options: UseUsageRecordsTableOptions) {
   let diagnosticController: AbortController | undefined
   const scopedParams = () => ({
     ...options.timeRangeParams.value,
-    ...(providerQuery.value ? { provider: providerQuery.value } : {}),
+    ...(providerQuery.value
+      ? { provider: providerQuery.value }
+      : {}),
   })
   const usagePagination = computed(() => ({
     currentPage: currentPage.value,
@@ -96,7 +107,11 @@ export function useUsageRecordsTable(options: UseUsageRecordsTableOptions) {
 
     await Promise.all([
       table.execute(),
-      ...(scope === 'all' ? [loadUsageAnalytics(globalParams)] : []),
+      ...(scope === 'all'
+        ? [
+            loadUsageAnalytics(globalParams),
+          ]
+        : []),
     ])
   }
 
@@ -267,6 +282,7 @@ function emptySummary() {
     cacheWriteInputTokens: '0',
     totalTokens: '0',
     averageLatencyMs: '0 ms',
+    averageLatencyMsValue: null,
   }
   return summary
 }
@@ -281,7 +297,7 @@ function emptyInsights() {
 function emptyOverview() {
   const overview: LoadingAnalytics<Awaited<ReturnType<typeof getUsageRecordInsightsOverview>>> = {
     analytics: null,
-    granularity: '1d',
+    granularity: '',
     health: {
       totalRequests: 0,
       successRequests: 0,
@@ -302,20 +318,15 @@ function emptyOverview() {
       firstTokenP50Ms: null,
       firstTokenP95Ms: null,
       firstTokenP99Ms: null,
-      admissionDecisionP50Ms: null,
-      admissionDecisionP95Ms: null,
-      accountSelectionWaitP50Ms: null,
-      accountSelectionWaitP95Ms: null,
       outputThroughputP10: null,
       outputThroughputP50: null,
       outputThroughputP90: null,
-      capacityUtilization: null,
-      capacityUtilizationP95: null,
-      latencyCoverage: 0,
-      firstTokenCoverage: 0,
-      admissionDecisionCoverage: 0,
-      accountSelectionWaitCoverage: 0,
-      capacityCoverage: 0,
+      load: {
+        averageConcurrency: 0,
+        peakConcurrency: 0,
+        admissionDecisionP95Ms: null,
+        accountSelectionWaitP95Ms: null,
+      },
       points: [],
     },
     cost: {
@@ -334,7 +345,12 @@ function emptyOverview() {
       cachedInputTokens: 0,
       totalTokens: 0,
       points: [],
-      coverage: { known: 0, partial: 0, unknown: 0, notBillable: 0 },
+      coverage: {
+        known: 0,
+        partial: 0,
+        unknown: 0,
+        notBillable: 0,
+      },
     },
   }
   return overview

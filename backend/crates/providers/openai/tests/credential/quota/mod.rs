@@ -1,6 +1,5 @@
 //! OpenAI 额度事实边界与展示快照回归
 
-mod capacity_freeze;
 mod credits;
 mod initial_sync;
 mod recovery;
@@ -46,6 +45,7 @@ fn wire_profile() -> CodexWireProfileState {
         terminal: "quota-contract".to_owned(),
         exact_user_agent: None,
         residency: None,
+        account_routing_override: None,
         verified_at: Utc
             .with_ymd_and_hms(2026, 7, 18, 0, 0, 0)
             .single()
@@ -86,7 +86,6 @@ pub(super) fn quota_service_with_initial_delays(
         http,
         base_url,
         Arc::new(crate::support::MemoryCooldownPort::new()),
-        Arc::new(crate::support::TestLeaseCoordinator::default()),
         crate::support::runtime_policy(),
     )
     .with_initial_sync_delays(delays)

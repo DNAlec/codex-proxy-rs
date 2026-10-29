@@ -3,7 +3,7 @@
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
 
-use axum::http::StatusCode;
+use axum::{extract::ws::Utf8Bytes, http::StatusCode};
 use bytes::Bytes;
 use futures::future::BoxFuture;
 use gateway_core::engine::CommitRequirement;
@@ -268,7 +268,7 @@ pub(super) async fn forward_response(
             return fail_body(connection, body, MiddlewareError::InvalidState, &request_id).await;
         }
         let terminal = frame.terminal();
-        let Ok(message) = String::from_utf8(frame.into_bytes().to_vec()) else {
+        let Ok(message) = Utf8Bytes::try_from(frame.into_bytes()) else {
             return fail_body(connection, body, MiddlewareError::InvalidState, &request_id).await;
         };
         let phase = match (first_frame_written, terminal) {
@@ -400,13 +400,13 @@ fn middleware_gateway_error(error: MiddlewareError) -> GatewayError {
         MiddlewareError::Rejected | MiddlewareError::Remote { rejected: true, .. } => {
             GatewayError::new(
                 GatewayErrorKind::PolicyDenied,
-                "request middleware rejected the request",
+                "Request middleware rejected the request.",
             )
         }
         MiddlewareError::Fault | MiddlewareError::Remote { .. } | MiddlewareError::InvalidState => {
             GatewayError::new(
                 GatewayErrorKind::Internal,
-                "request middleware returned an invalid response",
+                "Request middleware returned an invalid response.",
             )
         }
     }
@@ -779,7 +779,7 @@ pub(super) async fn send_control(
             connection,
             &GatewayError::new(
                 GatewayErrorKind::InvalidRequest,
-                "No upstream WebSocket connection is available for control messages",
+                "No upstream WebSocket connection is available for control messages.",
             ),
             request_id,
         )

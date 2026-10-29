@@ -1,22 +1,26 @@
 import type { ApiKey } from '@/api'
-import { ZNotification } from '@codex-proxy/ui'
 import { onScopeDispose, shallowRef } from 'vue'
 import { revealApiKey } from '@/api'
 import { useCopyText } from '@/composables/useCopyText'
-import { useIdSet } from '@/composables/useIdSet'
 import { useRequestState } from '@/composables/useRequestState'
+import { t } from '@/i18n'
 import { buildCodexCcSwitchImportDeeplink, resolveServiceRootUrl } from '@/utils/client'
+import { notification as ZNotification } from '@/utils/notification'
+
+type KeyRevealAction = 'copy' | 'use' | 'import'
 
 // 明文读取、复制、展示与导入共用生命周期，列表数据不保存明文。
 export function useApiKeyUse() {
   const copyText = useCopyText()
-  const revealingKeys = useIdSet<string>()
+  const revealingKeys = shallowRef(new Map<string, KeyRevealAction>())
   const revealRequest = useRequestState()
   const showUseKeyModal = shallowRef(false)
   const selectedUseKey = shallowRef<(ApiKey & { key: string }) | null>(null)
   const showCreatedKeyModal = shallowRef(false)
   const createdKey = shallowRef('')
   const createdKeyName = shallowRef('')
+  const showImportKeyModal = shallowRef(false)
+  const selectedImportKey = shallowRef<ApiKey | null>(null)
 
   function showCreatedKey(key: string, name: string) {
     createdKey.value = key
@@ -26,7 +30,7 @@ export function useApiKeyUse() {
 
   const openAiBaseUrl = `${resolveServiceRootUrl()}/v1`
 
-  function importCreatedKeyToCcs() {
+  function importCreatedKey() {
     if (!createdKey.value)
       return
 
@@ -38,14 +42,23 @@ export function useApiKeyUse() {
   }
 
   function openUseKeyModal(apiKey: ApiKey) {
-    return withPlaintextKey(apiKey, (key) => {
+    return withPlaintextKey(apiKey, 'use', (key) => {
       selectedUseKey.value = { ...apiKey, key }
       showUseKeyModal.value = true
     })
   }
 
-  function importToCcs(apiKey: ApiKey) {
-    return withPlaintextKey(apiKey, (key) => {
+  function openImportKeyModal(apiKey: ApiKey) {
+    revealRequest.invalidate()
+    selectedImportKey.value = apiKey
+    showImportKeyModal.value = true
+  }
+
+  function importSelectedKey() {
+    const apiKey = selectedImportKey.value
+    if (!apiKey)
+      return
+    return withPlaintextKey(apiKey, 'import', (key) => {
       window.location.href = buildCodexCcSwitchImportDeeplink({
         apiKey: key,
         baseUrl: openAiBaseUrl,
@@ -55,20 +68,26 @@ export function useApiKeyUse() {
   }
 
   async function copyToClipboard(text: string) {
-    await copyText(text, { successText: '已复制到剪贴板', emptyErrorText: '复制失败' })
+    await copyText(text, {
+      successText: t('keys.configuration.copiedToClipboard'),
+      emptyErrorText: t('common.errors.copy'),
+    })
   }
 
-  async function withPlaintextKey(apiKey: ApiKey, use: (key: string) => void | Promise<void>) {
-    if (revealingKeys.has(apiKey.id))
+  async function withPlaintextKey(apiKey: ApiKey, action: KeyRevealAction, use: (key: string) => void | Promise<void>) {
+    if (revealingKeys.value.has(apiKey.id))
       return
     // 明文操作共用一个当前意图，跨行点击和页面离开都使旧结果失效
     const requestId = revealRequest.start()
+    revealingKeys.value = new Map(revealingKeys.value).set(apiKey.id, action)
     try {
-      const result = await revealingKeys.run(apiKey.id, () => revealApiKey({ id: apiKey.id }, { signal: revealRequest.signal }))
-      if (!result || !revealRequest.isCurrent(requestId))
+      const result = await revealApiKey({ id: apiKey.id }, { signal: revealRequest.signal })
+      if (!revealRequest.isCurrent(requestId))
         return
       if (!result.plaintextKey) {
-        ZNotification.error({ message: '完整 API Key 不可用' })
+        ZNotification.error({
+          message: t('keys.configuration.fullApiKeyNotAvailable'),
+        })
         return
       }
       await use(result.plaintextKey)
@@ -77,12 +96,15 @@ export function useApiKeyUse() {
       revealRequest.fail(requestId, error)
     }
     finally {
+      const pendingKeys = new Map(revealingKeys.value)
+      pendingKeys.delete(apiKey.id)
+      revealingKeys.value = pendingKeys
       revealRequest.finish(requestId)
     }
   }
 
   function copyApiKey(apiKey: ApiKey) {
-    return withPlaintextKey(apiKey, copyToClipboard)
+    return withPlaintextKey(apiKey, 'copy', copyToClipboard)
   }
 
   function clearCreatedKey() {
@@ -92,6 +114,7 @@ export function useApiKeyUse() {
 
   onScopeDispose(() => {
     selectedUseKey.value = null
+    selectedImportKey.value = null
     clearCreatedKey()
   })
 
@@ -100,14 +123,17 @@ export function useApiKeyUse() {
     selectedUseKey,
     showCreatedKeyModal,
     createdKey,
-    revealingKeyIds: revealingKeys.ids,
+    showImportKeyModal,
+    selectedImportKey,
+    revealingKeys,
     openAiBaseUrl,
     showCreatedKey,
     clearCreatedKey,
     copyToClipboard,
     copyApiKey,
-    importCreatedKeyToCcs,
+    importCreatedKey,
     openUseKeyModal,
-    importToCcs,
+    openImportKeyModal,
+    importSelectedKey,
   }
 }

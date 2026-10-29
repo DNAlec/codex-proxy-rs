@@ -653,6 +653,7 @@ pub struct DashboardAccountUsage {
     pub authentication_kind: String,
     pub name: String,
     pub email: Option<String>,
+    pub notes: Option<String>,
     pub plan_type: Option<String>,
     /// Admin 按 Provider 补齐的套餐展示名称
     pub plan_type_display: Option<String>,
@@ -740,7 +741,6 @@ pub struct UsageListRecord {
     pub provider_account_authentication_kind: Option<String>,
     pub upstream_model_id: Option<String>,
     pub upstream_transport: Option<String>,
-    pub upstream_response_model: Option<String>,
     pub service_tier: Option<String>,
     pub input_tokens: Option<u64>,
     pub output_tokens: Option<u64>,
@@ -802,7 +802,6 @@ pub struct UsageRecord {
     pub upstream_transport: Option<String>,
     pub http_version: Option<String>,
     pub websocket_pool: Option<String>,
-    pub upstream_response_model: Option<String>,
     pub service_tier: Option<String>,
     /// Provider 已筛选的专有观测 JSON；管理领域保持不透明
     pub provider_metadata_json: Option<String>,
@@ -1190,10 +1189,10 @@ pub struct DashboardWireProfile {
     pub release: Option<DashboardDesktopRelease>,
 }
 
-/// Provider 画像的差异字段；展示层只显示标签和值，不解释 Provider 语义
+/// Provider 画像的差异字段，以稳定标识传递语义，名称由前端本地化
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DashboardWireAttribute {
-    pub label: String,
+    pub key: String,
     pub value: String,
 }
 
@@ -1262,38 +1261,44 @@ pub struct UsageInsightsHealth {
     pub points: Vec<UsageInsightsHealthPoint>,
 }
 
+/// 一个时间桶内按重叠时长加权的逻辑请求并发
+#[derive(Debug, Clone, PartialEq)]
+pub struct UsageConcurrencyPoint {
+    pub bucket_start: DateTime<Utc>,
+    pub average_concurrency: f64,
+    pub peak_concurrency: u64,
+}
+
+/// 请求并发与调度等待的负载指标
+#[derive(Debug, Clone, PartialEq)]
+pub struct UsageInsightsLoad {
+    pub average_concurrency: f64,
+    pub peak_concurrency: u64,
+    pub admission_decision_p95_ms: Option<PercentileMilliseconds>,
+    pub account_selection_wait_p95_ms: Option<PercentileMilliseconds>,
+}
+
 /// 洞察性能时间点
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct UsageInsightsPerformancePoint {
     pub bucket_start: DateTime<Utc>,
     pub latency_percentiles: LatencyPercentiles,
     pub first_token_latency_percentiles: LatencyPercentiles,
-    pub admission_decision_percentiles: LatencyPercentiles,
-    pub account_selection_wait_percentiles: LatencyPercentiles,
     pub output_throughput_p10: Option<u64>,
     pub output_throughput_p50: Option<u64>,
     pub output_throughput_p90: Option<u64>,
-    pub capacity_utilization_avg_basis_points: Option<u64>,
-    pub capacity_utilization_p95_basis_points: Option<u64>,
+    pub load: UsageInsightsLoad,
 }
 
-/// 洞察性能汇总与可观测覆盖率
+/// 洞察性能汇总
 #[derive(Debug, Clone, PartialEq)]
 pub struct UsageInsightsPerformance {
     pub latency_percentiles: LatencyPercentiles,
     pub first_token_latency_percentiles: LatencyPercentiles,
-    pub latency_coverage: f64,
-    pub first_token_coverage: f64,
-    pub admission_decision_percentiles: LatencyPercentiles,
-    pub account_selection_wait_percentiles: LatencyPercentiles,
-    pub admission_decision_coverage: f64,
-    pub account_selection_wait_coverage: f64,
     pub output_throughput_p10: Option<u64>,
     pub output_throughput_p50: Option<u64>,
     pub output_throughput_p90: Option<u64>,
-    pub capacity_utilization_avg_basis_points: Option<u64>,
-    pub capacity_utilization_p95_basis_points: Option<u64>,
-    pub capacity_coverage: f64,
+    pub load: UsageInsightsLoad,
     pub points: Vec<UsageInsightsPerformancePoint>,
 }
 

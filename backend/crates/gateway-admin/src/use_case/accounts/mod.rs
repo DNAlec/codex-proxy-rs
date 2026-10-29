@@ -87,13 +87,6 @@ pub trait AccountsService: Send + Sync {
         command: UpdateAccount,
     ) -> Result<AccountUpdateResult, AdminError>;
 
-    async fn lower_concurrency_limit(
-        &self,
-        context: &MutationContext,
-        account_id: ProviderAccountId,
-        limit: gateway_core::account::AccountConcurrencyLimit,
-    ) -> Result<Option<AccountUpdateResult>, AdminError>;
-
     async fn batch_update(
         &self,
         context: &MutationContext,
@@ -122,14 +115,14 @@ pub trait AccountsService: Send + Sync {
         &self,
         _account_id: &ProviderAccountId,
     ) -> Result<AccountPersonalInfo, AdminError> {
-        Err(AdminError::invalid("当前 Provider 不支持个人信息"))
+        Err(AdminError::invalid("该服务商不支持个人信息查询"))
     }
 
     async fn profile_avatar(
         &self,
         _account_id: &ProviderAccountId,
     ) -> Result<ProviderProfileAvatar, AdminError> {
-        Err(AdminError::invalid("当前 Provider 不支持账号头像"))
+        Err(AdminError::invalid("该服务商不支持账号头像"))
     }
 
     async fn reset_credit_automation_status(
@@ -160,7 +153,7 @@ pub trait AccountsService: Send + Sync {
         _context: &MutationContext,
         _account_id: ProviderAccountId,
     ) -> Result<ProviderResetCredits, AdminError> {
-        Err(AdminError::invalid("当前 Provider 不支持重置额度"))
+        Err(AdminError::invalid("该服务商不支持额度重置"))
     }
 
     async fn consume_reset_credit(
@@ -168,7 +161,7 @@ pub trait AccountsService: Send + Sync {
         _context: &MutationContext,
         _command: ConsumeProviderResetCredit,
     ) -> Result<ProviderResetCreditResult, AdminError> {
-        Err(AdminError::invalid("当前 Provider 不支持重置额度"))
+        Err(AdminError::invalid("该服务商不支持额度重置"))
     }
 
     async fn models(
@@ -322,7 +315,7 @@ impl DefaultAccountsService {
             .load_account(account_id.as_str(), runtime)
             .await
             .map_err(|error| map_store_error(error, "provider account"))?
-            .ok_or_else(|| AdminError::not_found("Provider 账号不存在"))
+            .ok_or_else(|| AdminError::not_found("服务商账号不存在"))
     }
 
     async fn provider_for_account(
@@ -474,6 +467,7 @@ impl DefaultAccountsService {
                     .and_then(|(window, _)| window.local_usage.clone())
             });
         Ok(AccountDirectoryItem {
+            protection_rules: stored.protection_rules,
             capacity: stored.capacity,
             capabilities: provider
                 .account_capabilities(account_id, &stored.account.authentication_kind),
@@ -570,7 +564,7 @@ impl AccountsService for DefaultAccountsService {
             .zip(quotas)
             .map(|(mut item, quota)| {
                 let id = ProviderAccountId::new(item.account.id.clone())
-                    .map_err(|_| AdminError::invalid("Provider 账号 ID 不合法"))?;
+                    .map_err(|_| AdminError::invalid("服务商账号 ID 不合法"))?;
                 let capabilities = providers
                     .require(&item.account.provider_kind)
                     .map(|provider| {
@@ -583,6 +577,7 @@ impl AccountsService for DefaultAccountsService {
                         .and_then(|(window, _)| window.local_usage.clone())
                 });
                 Ok(AccountDirectoryItem {
+                    protection_rules: item.protection_rules,
                     capacity: crate::model::accounts::AccountCapacity {
                         used_slots: in_flight
                             .as_ref()
@@ -748,7 +743,7 @@ impl AccountsService for DefaultAccountsService {
         command: UpdateAccount,
     ) -> Result<AccountUpdateResult, AdminError> {
         let account_id = ProviderAccountId::new(command.account_id.clone())
-            .map_err(|_| AdminError::invalid("Provider 账号 ID 不合法"))?;
+            .map_err(|_| AdminError::invalid("服务商账号 ID 不合法"))?;
         let (_, provider) = self.provider_for_account(&account_id).await?;
         let enabled = command.enabled;
         let result = self
@@ -766,27 +761,6 @@ impl AccountsService for DefaultAccountsService {
         Ok(result)
     }
 
-    async fn lower_concurrency_limit(
-        &self,
-        context: &MutationContext,
-        account_id: ProviderAccountId,
-        limit: gateway_core::account::AccountConcurrencyLimit,
-    ) -> Result<Option<AccountUpdateResult>, AdminError> {
-        let (_, provider) = self.provider_for_account(&account_id).await?;
-        let result = self
-            .accounts
-            .lower_concurrency_limit(&account_id, limit, context)
-            .await
-            .map_err(|error| map_store_error(error, "provider account"))?;
-        if let Some(result) = &result {
-            provider
-                .account_facts_changed(std::slice::from_ref(&account_id))
-                .await;
-            publish_committed(self.snapshot.as_ref(), result.config_revision).await?;
-        }
-        Ok(result)
-    }
-
     async fn batch_update(
         &self,
         context: &MutationContext,
@@ -797,7 +771,7 @@ impl AccountsService for DefaultAccountsService {
             .iter()
             .map(|id| {
                 ProviderAccountId::new(id.clone())
-                    .map_err(|_| AdminError::invalid("Provider 账号 ID 不合法"))
+                    .map_err(|_| AdminError::invalid("服务商账号 ID 不合法"))
             })
             .collect::<Result<Vec<_>, _>>()?;
         let mut providers = BTreeMap::<
