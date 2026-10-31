@@ -345,7 +345,7 @@ impl CodexCredentialSelector {
                 .remaining_percent
                 .map(|percent| (percent.clamp(0.0, 100.0) * 100.0).round() as u64)
         };
-        // 互联观测只提供 Smart 额度分，不修改真实错误、冷却或账号可用状态
+        // 选号只读取 Smart 额度分，额度恢复由互联同步事务独立提交
         Some(AccountQuotaSignals::new(None, rank))
     }
 

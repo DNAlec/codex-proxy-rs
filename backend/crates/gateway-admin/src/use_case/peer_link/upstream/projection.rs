@@ -12,12 +12,12 @@ use crate::model::{
         UpstreamSyncState,
     },
 };
-use gateway_core::account::{UpstreamInfoPlan, UpstreamInfoRecord};
+use gateway_core::account::{QuotaAccessState, UpstreamInfoPlan, UpstreamInfoRecord};
 use gateway_protocol::peer::{
     PeerComponentStatus, PeerLink, PeerPoolDisclosure, PeerQuotaDisclosure,
 };
 
-use super::{PeerInfoService, snapshot};
+use super::{PeerInfoService, quota, snapshot};
 
 impl PeerInfoService {
     pub(crate) fn project(record: &UpstreamInfoRecord, now: SystemTime) -> ProviderQuota {
@@ -138,7 +138,8 @@ impl PeerInfoService {
                         window_seconds: Some(seconds),
                         used_percent,
                         reset_at: window.resets_at.as_deref().and_then(snapshot::datetime),
-                        limit_reached: !window_stale && snapshot::budget_exhausted(window, now),
+                        limit_reached: !window_stale
+                            && quota::window_access(window, now) == QuotaAccessState::Exhausted,
                         local_usage: None,
                         provider_data: None,
                     });

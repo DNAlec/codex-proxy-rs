@@ -159,7 +159,7 @@ impl PeerTransport for TestTransport {
             "observed_at":now.to_rfc3339(),
             "expires_at":(now + chrono::Duration::minutes(5)).to_rfc3339(),
             "capabilities":["key_usage"],
-            "usage":{"status":"available","observed_at":now.to_rfc3339(),"data":{"unit":"USD",
+            "usage":{"status":"available","observed_at":now.to_rfc3339(),"data":{"unit":"USD","allowed":false,
                 "daily":{"total":"1","used":"1","remaining":"0","resetsAt":(now + chrono::Duration::days(1)).to_rfc3339()},
                 "weekly":{"total":"0","used":"0","remaining":"0"}}},
             "pool":{"disclosure":"none"}, "quota":{"disclosure":"none"}, "models":[]

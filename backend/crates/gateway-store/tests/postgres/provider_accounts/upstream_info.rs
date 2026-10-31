@@ -1,4 +1,4 @@
-//! 验证互联同步计划的并发领取、租约回收、快照保留与连接写入围栏
+//! 验证互联计划、快照与额度恢复的原子提交及连接写入围栏
 
 use super::*;
 use gateway_core::account::{
@@ -55,6 +55,160 @@ fn completion(
         completed_at: now() + Duration::from_secs(at),
         next_attempt_at: now() + Duration::from_secs(at + 300),
         result,
+        quota: None,
+    }
+}
+
+#[tokio::test]
+async fn quota_recovery_commits_only_with_a_current_successful_claim_and_newer_evidence() {
+    for case in [
+        "recovered",
+        "older",
+        "equal",
+        "new_failure",
+        "wrong_claim",
+        "expired_claim",
+        "disabled",
+        "rotated",
+        "proxy_changed",
+        "query_failed",
+        "no_evidence",
+        "credential_error",
+        "exhausted",
+        "unknown",
+        "old_exhaustion",
+    ] {
+        let Some((database, repository, connection)) = fixture("peer_recovery").await else {
+            return;
+        };
+        let id = &connection.account_id;
+        let exhausted = QuotaState::exhausted(
+            QuotaEvidence::PaymentRequired,
+            now(),
+            Some(now() + Duration::from_secs(3600)),
+        );
+        repository
+            .apply_provider_quota_access(id.as_str(), Revision::new(1).unwrap(), exhausted)
+            .await
+            .unwrap();
+        let claim = repository
+            .claim_due(
+                &ProviderKind::new("openai").unwrap(),
+                now(),
+                1,
+                Duration::from_secs(60),
+            )
+            .await
+            .unwrap()
+            .remove(0);
+        let mut done = completion(&claim, 3, Ok(observation()));
+        let recovered_at = now() + Duration::from_secs(1);
+        done.quota = Some(QuotaState::allowed(recovered_at));
+        match case {
+            "older" => done.quota = Some(QuotaState::allowed(now() - Duration::from_secs(1))),
+            "equal" => done.quota = Some(QuotaState::allowed(now())),
+            "new_failure" => {
+                repository
+                    .apply_provider_quota_access(
+                        id.as_str(),
+                        Revision::new(1).unwrap(),
+                        QuotaState::exhausted(
+                            QuotaEvidence::UsageLimitReached,
+                            now() + Duration::from_secs(2),
+                            None,
+                        ),
+                    )
+                    .await
+                    .unwrap();
+            }
+            "wrong_claim" => done.claim_token = uuid::Uuid::new_v4(),
+            "expired_claim" => done.completed_at = now() + Duration::from_secs(60),
+            "disabled" => {
+                repository
+                    .set_provider_account_enabled(id.as_str(), false)
+                    .await
+                    .unwrap();
+            }
+            "rotated" => {
+                sqlx::query("update provider_accounts set credential_revision = credential_revision + 1 where id = $1")
+                    .bind(id.as_str()).execute(&database.pool).await.unwrap();
+            }
+            "proxy_changed" => {
+                sqlx::query("update provider_accounts set outbound_proxy_url = 'http://127.0.0.1:8080' where id = $1")
+                    .bind(id.as_str()).execute(&database.pool).await.unwrap();
+            }
+            "query_failed" => done.result = Err(UpstreamInfoFailure::Unavailable),
+            "no_evidence" => done.quota = None,
+            "unknown" => done.quota = Some(QuotaState::observed_unknown(recovered_at)),
+            "exhausted" | "old_exhaustion" => {
+                repository
+                    .apply_provider_quota_access(
+                        id.as_str(),
+                        Revision::new(1).unwrap(),
+                        QuotaState::allowed(if case == "old_exhaustion" {
+                            now() + Duration::from_secs(2)
+                        } else {
+                            now()
+                        }),
+                    )
+                    .await
+                    .unwrap();
+                done.quota = Some(QuotaState::exhausted(
+                    QuotaEvidence::AccountLimitReached,
+                    recovered_at,
+                    Some(now() + Duration::from_secs(3600)),
+                ));
+            }
+            "credential_error" => {
+                sqlx::query(
+                    "update provider_accounts set credential_state = 'expired' where id = $1",
+                )
+                .bind(id.as_str())
+                .execute(&database.pool)
+                .await
+                .unwrap();
+            }
+            _ => {}
+        }
+        let before = repository.get_account(id).await.unwrap().unwrap();
+        let observed_quota = done.quota;
+        let accepted = repository.complete(done).await.unwrap();
+        assert_eq!(
+            accepted,
+            !matches!(
+                case,
+                "wrong_claim" | "expired_claim" | "disabled" | "rotated" | "proxy_changed"
+            ),
+            "{case}"
+        );
+        let after = repository.get_account(id).await.unwrap().unwrap();
+        assert_eq!(
+            after.quota(),
+            if matches!(case, "recovered" | "credential_error") {
+                QuotaState::allowed(recovered_at)
+            } else if case == "exhausted" {
+                observed_quota.unwrap()
+            } else {
+                before.quota()
+            },
+            "{case}"
+        );
+        assert_eq!(
+            after.credential_state(),
+            before.credential_state(),
+            "{case}"
+        );
+        let saved = repository
+            .read(std::slice::from_ref(id))
+            .await
+            .unwrap()
+            .remove(0);
+        assert_eq!(
+            saved.snapshot.is_some(),
+            accepted && case != "query_failed",
+            "{case}"
+        );
+        database.close().await;
     }
 }
 

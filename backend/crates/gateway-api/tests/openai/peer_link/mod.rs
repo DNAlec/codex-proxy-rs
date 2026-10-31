@@ -244,6 +244,8 @@ async fn exports_scoped_observations_even_when_the_key_budget_is_exhausted_witho
     let body = response_json(response).await;
     assert_eq!(body["object"], "cpr.peer");
     assert_eq!(body["usage"]["data"]["daily"]["remaining"], "0");
+    assert_eq!(body["usage"]["data"]["allowed"], false);
+    assert_eq!(body["usage"]["data"]["daily"]["limit_reached"], true);
     assert_eq!(body["pool"]["account_count"], 1);
     assert!(body["pool"].get("plans").is_none());
     assert_eq!(

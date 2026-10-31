@@ -2,6 +2,7 @@
 
 mod accounts;
 mod projection;
+mod quota;
 mod scheduling;
 mod service;
 mod snapshot;

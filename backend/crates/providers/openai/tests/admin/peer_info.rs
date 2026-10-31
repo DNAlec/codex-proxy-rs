@@ -1,6 +1,7 @@
 //! OpenAI 凭据适配、公共互联服务、Host 传输与调度只读端口的集成验证
 
 use super::*;
+use crate::support::MemoryCooldownPort;
 use gateway_core::{
     account::{
         LoadedCredential, UpstreamConnection, UpstreamInfoClaim, UpstreamInfoCompletion,
@@ -207,38 +208,64 @@ impl UpstreamInfoStore for MemoryUpstreamInfoStore {
         if self.current(&completion.connection).await.is_err() {
             return Ok(false);
         }
-        let mut claims = self.claims.lock().unwrap();
-        let mut records = self.records.lock().unwrap();
-        let Some(record) = records.get_mut(&completion.connection.account_id) else {
-            return Ok(false);
-        };
-        if claims.get(&completion.connection.account_id) != Some(&completion.claim_token)
-            || record
-                .plan
-                .claimed_until
-                .is_none_or(|expiry| expiry <= completion.completed_at)
-            || record.plan.connection != completion.connection
-            || record.plan.request_generation != completion.request_generation
+        let recovery = completion.quota.filter(|_| completion.result.is_ok());
         {
-            return Ok(false);
-        }
-        claims.remove(&completion.connection.account_id);
-        record.plan.completed_generation = completion.request_generation;
-        record.plan.claimed_until = None;
-        record.plan.next_attempt_at = completion.next_attempt_at;
-        match completion.result {
-            Ok(snapshot) => {
-                record.snapshot = Some(snapshot);
-                record.plan.last_success_at = Some(completion.completed_at);
-                record.plan.last_error = None;
-                record.plan.consecutive_failures = 0;
+            let mut claims = self.claims.lock().unwrap();
+            let mut records = self.records.lock().unwrap();
+            let Some(record) = records.get_mut(&completion.connection.account_id) else {
+                return Ok(false);
+            };
+            if claims.get(&completion.connection.account_id) != Some(&completion.claim_token)
+                || record
+                    .plan
+                    .claimed_until
+                    .is_none_or(|expiry| expiry <= completion.completed_at)
+                || record.plan.connection != completion.connection
+                || record.plan.request_generation != completion.request_generation
+            {
+                return Ok(false);
             }
-            Err(error) => {
-                record.plan.last_error = Some(error);
-                record.plan.consecutive_failures += 1;
-                if error == UpstreamInfoFailure::Unauthorized {
-                    record.snapshot = None;
+            claims.remove(&completion.connection.account_id);
+            record.plan.completed_generation = completion.request_generation;
+            record.plan.claimed_until = None;
+            record.plan.next_attempt_at = completion.next_attempt_at;
+            match completion.result {
+                Ok(snapshot) => {
+                    record.snapshot = Some(snapshot);
+                    record.plan.last_success_at = Some(completion.completed_at);
+                    record.plan.last_error = None;
+                    record.plan.consecutive_failures = 0;
                 }
+                Err(error) => {
+                    record.plan.last_error = Some(error);
+                    record.plan.consecutive_failures += 1;
+                    if error == UpstreamInfoFailure::Unauthorized {
+                        record.snapshot = None;
+                    }
+                }
+            }
+        }
+        if let Some(state) = recovery
+            && state.access() != gateway_core::account::QuotaAccessState::Unknown
+            && let Some(observed_at) = state.observed_at()
+        {
+            let account = self
+                .accounts
+                .account(completion.connection.account_id.as_str())
+                .unwrap();
+            if account.enabled()
+                && account
+                    .quota()
+                    .observed_at()
+                    .is_none_or(|time| time < observed_at)
+            {
+                self.accounts
+                    .apply_quota_access(QuotaAccessChange {
+                        account_id: account.id().clone(),
+                        expected_revision: account.revision(),
+                        state,
+                    })
+                    .await?;
             }
         }
         Ok(true)
@@ -252,10 +279,277 @@ fn peer_document() -> Value {
         "node":{"id":"synthetic-peer","name":"测试上游","software":"cpr"},
         "observed_at":now.to_rfc3339(), "expires_at":(now + chrono::Duration::minutes(5)).to_rfc3339(),
         "capabilities":["key_usage", "pool_summary"],
-        "usage":{"status":"available","observed_at":now.to_rfc3339(),"data":{"unit":"USD","daily":{"total":"10","used":"2","remaining":"8","resetsAt":(now + chrono::Duration::days(1)).to_rfc3339()},"weekly":{"total":"50","used":"5","remaining":"45","resetsAt":(now + chrono::Duration::days(7)).to_rfc3339()}}},
+        "usage":{"status":"available","observed_at":now.to_rfc3339(),"data":{"unit":"USD","allowed":true,"daily":{"limit_reached":false,"total":"10","used":"2","remaining":"8","resetsAt":(now + chrono::Duration::days(1)).to_rfc3339()},"weekly":{"limit_reached":false,"total":"50","used":"5","remaining":"45","resetsAt":(now + chrono::Duration::days(7)).to_rfc3339()}}},
         "pool":{"disclosure":"summary","account_count":2,"states":{"ready":2,"cooldown":0,"exhausted":0,"disabled":0,"error":0,"unknown":0},"plans":[{"name":"plus","count":2}]},
         "quota":{"disclosure":"none"},"models":[]
     })
+}
+
+async fn exhaust_account(accounts: &MemoryAccountStore, id: &ProviderAccountId, at: SystemTime) {
+    let account = accounts.account(id.as_str()).unwrap();
+    accounts
+        .apply_quota_access(QuotaAccessChange {
+            account_id: id.clone(),
+            expected_revision: account.revision(),
+            state: QuotaState::exhausted(QuotaEvidence::UsageLimitReached, at, None),
+        })
+        .await
+        .unwrap();
+}
+
+#[tokio::test]
+async fn peer_sync_restores_exhausted_accounts_only_from_current_key_budget_facts() {
+    for case in [
+        "available",
+        "unlimited",
+        "budget_exhausted",
+        "weekly_exhausted",
+        "expired_budget",
+        "missing_remaining",
+        "missing_access",
+        "missing_allowed",
+        "undisclosed_access",
+        "amounts_disagree",
+        "usage_unknown",
+        "budget_only",
+        "old_usage",
+        "old_snapshot",
+        "unauthorized",
+        "unavailable",
+    ] {
+        let server = MockServer::start().await;
+        let (mut bundle, accounts, _, id, _config) = fixture(&server).await;
+        let exhausted_at = SystemTime::now() - Duration::from_secs(60);
+        exhaust_account(&accounts, &id, exhausted_at).await;
+        let mut document = peer_document();
+        let older = DateTime::<Utc>::from(exhausted_at - Duration::from_secs(1)).to_rfc3339();
+        match case {
+            "unlimited" => {
+                for window in ["daily", "weekly"] {
+                    document["usage"]["data"][window] = json!({
+                        "total":null, "remaining":null, "used":"7", "resetsAt":null
+                    });
+                }
+            }
+            "budget_exhausted" => {
+                document["usage"]["data"]["allowed"] = json!(false);
+                document["usage"]["data"]["daily"]["limit_reached"] = json!(true);
+            }
+            "weekly_exhausted" => {
+                document["usage"]["data"]
+                    .as_object_mut()
+                    .unwrap()
+                    .remove("allowed");
+                document["usage"]["data"]["weekly"]["limit_reached"] = json!(true);
+            }
+            "expired_budget" => {
+                document["usage"]["data"]
+                    .as_object_mut()
+                    .unwrap()
+                    .remove("allowed");
+                document["usage"]["data"]["daily"]["limit_reached"] = json!(true);
+                document["usage"]["data"]["daily"]["resetsAt"] = json!(older);
+            }
+            "missing_allowed" => {
+                document["usage"]["data"]
+                    .as_object_mut()
+                    .unwrap()
+                    .remove("allowed");
+            }
+            "undisclosed_access" => document["capabilities"] = json!(["pool_summary"]),
+            "missing_access" => {
+                document["usage"]["data"]
+                    .as_object_mut()
+                    .unwrap()
+                    .remove("allowed");
+                for window in ["daily", "weekly"] {
+                    document["usage"]["data"][window]
+                        .as_object_mut()
+                        .unwrap()
+                        .remove("limit_reached");
+                }
+            }
+            "amounts_disagree" => {
+                document["usage"]["data"]["daily"]["remaining"] = json!("0");
+                document["usage"]["data"]["daily"]["used"] = json!("10");
+            }
+            "missing_remaining" => document["usage"]["data"]["daily"]["remaining"] = Value::Null,
+            "usage_unknown" => document["usage"]["status"] = json!("unknown"),
+            "budget_only" => document["capabilities"] = json!(["key_usage"]),
+            "old_usage" => document["usage"]["observed_at"] = json!(older),
+            "old_snapshot" => document["observed_at"] = json!(older),
+            _ => {}
+        }
+        let status = match case {
+            "unauthorized" => 403,
+            "unavailable" => 503,
+            _ => 200,
+        };
+        Mock::given(method("GET"))
+            .and(path("/custom/v1/cpr/link"))
+            .respond_with(ResponseTemplate::new(status).set_body_json(document))
+            .expect(1)
+            .mount(&server)
+            .await;
+        cycle(&worker(&mut bundle)).await;
+        let account = accounts.account(id.as_str()).unwrap();
+        assert_eq!(
+            account.quota().is_exhausted(),
+            !matches!(
+                case,
+                "available"
+                    | "unlimited"
+                    | "budget_only"
+                    | "missing_remaining"
+                    | "amounts_disagree"
+            ),
+            "{case}"
+        );
+        assert_eq!(account.credential_state(), CredentialState::Ready);
+        assert!(
+            server
+                .received_requests()
+                .await
+                .unwrap()
+                .iter()
+                .all(|request| request.method == "GET")
+        );
+    }
+}
+
+#[tokio::test]
+async fn peer_sync_cannot_clear_an_exhaustion_recorded_while_the_request_is_in_flight() {
+    let server = MockServer::start().await;
+    let (mut bundle, accounts, _, id, _config) = fixture(&server).await;
+    exhaust_account(&accounts, &id, SystemTime::now() - Duration::from_secs(60)).await;
+    let mut document = peer_document();
+    // 上游时钟略快时也必须按本地请求开始时间保护并发失败
+    let future = (Utc::now() + chrono::Duration::seconds(10)).to_rfc3339();
+    document["observed_at"] = json!(future);
+    document["usage"]["observed_at"] = json!(future);
+    Mock::given(method("GET"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_json(document)
+                .set_delay(Duration::from_millis(200)),
+        )
+        .mount(&server)
+        .await;
+    let worker = Arc::new(worker(&mut bundle));
+    let running = tokio::spawn({
+        let worker = worker.clone();
+        async move { cycle(&worker).await }
+    });
+    wait_for_request(&server).await;
+    let failed_at = SystemTime::now();
+    exhaust_account(&accounts, &id, failed_at).await;
+    running.await.unwrap();
+    let account = accounts.account(id.as_str()).unwrap();
+    assert_eq!(
+        account.quota(),
+        QuotaState::exhausted(QuotaEvidence::UsageLimitReached, failed_at, None)
+    );
+}
+
+#[tokio::test]
+async fn key_budget_rejections_recover_through_sync_while_ordinary_429_keeps_its_cooldown() {
+    use gateway_core::error::ProviderErrorKind;
+
+    for code in [
+        "key_daily_budget_exceeded",
+        "key_weekly_budget_exceeded",
+        "rate_limit_exceeded",
+    ] {
+        let budget = code != "rate_limit_exceeded";
+        let server = MockServer::start().await;
+        let (mut bundle, accounts, _, id, _config) = fixture(&server).await;
+        Mock::given(method("POST"))
+            .and(path("/custom/v1/responses"))
+            .respond_with(ResponseTemplate::new(429).insert_header("retry-after", "86400")
+                .set_body_json(json!({"error":{"code":code,"type":if budget { "usage_limit_reached" } else { "rate_limit_error" },"message":"limit reached"}})))
+            .expect(1).mount(&server).await;
+        let mut response = execute_peer_request(&bundle, "round_robin").await.unwrap();
+        let failure = loop {
+            match response.next().await {
+                Some(Err(error)) => break error,
+                Some(Ok(_)) => {}
+                None => panic!("expected rejection"),
+            }
+        };
+        drop(response);
+        assert_eq!(
+            failure.kind(),
+            if budget {
+                ProviderErrorKind::QuotaExhausted
+            } else {
+                ProviderErrorKind::RateLimited
+            },
+            "{code}"
+        );
+        assert_eq!(
+            accounts
+                .account(id.as_str())
+                .unwrap()
+                .quota()
+                .is_exhausted(),
+            budget,
+            "{code}"
+        );
+        let cooldown = bundle.cooldowns.read(&id).await.unwrap();
+        assert_eq!(cooldown.is_some(), !budget, "{code}");
+        server.verify().await;
+        server.reset().await;
+
+        Mock::given(method("GET"))
+            .and(path("/custom/v1/cpr/link"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(peer_document()))
+            .expect(1)
+            .mount(&server)
+            .await;
+        Mock::given(method("POST"))
+            .and(path("/custom/v1/responses"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .insert_header("content-type", "text/event-stream")
+                    .set_body_string(COMPLETED_SESSION_SSE),
+            )
+            .expect(if budget { 1 } else { 0 })
+            .mount(&server)
+            .await;
+        cycle(&worker(&mut bundle)).await;
+        assert!(
+            !accounts
+                .account(id.as_str())
+                .unwrap()
+                .quota()
+                .is_exhausted(),
+            "{code}"
+        );
+        assert_eq!(
+            bundle.cooldowns.read(&id).await.unwrap(),
+            cooldown,
+            "{code}"
+        );
+        if budget {
+            let mut response = execute_peer_request(&bundle, "round_robin").await.unwrap();
+            while let Some(event) = response.next().await {
+                event.unwrap();
+            }
+        } else {
+            let error = match execute_peer_request(&bundle, "round_robin").await {
+                Err(error) => error,
+                Ok(mut response) => loop {
+                    match response.next().await {
+                        Some(Err(error)) => break error,
+                        Some(Ok(_)) => {}
+                        None => panic!("cooldown must prevent sending"),
+                    }
+                },
+            };
+            assert_eq!(error.kind(), ProviderErrorKind::NoEligibleAccount);
+        }
+        server.verify().await;
+    }
 }
 
 async fn fixture(
@@ -680,11 +974,13 @@ async fn invalid_or_redirected_responses_never_replace_the_last_valid_snapshot()
 }
 
 #[tokio::test]
-async fn smart_prefers_another_account_when_key_budget_is_exhausted_without_pool_disclosure() {
+async fn peer_sync_excludes_budget_exhausted_accounts_without_pool_disclosure() {
     let server = MockServer::start().await;
     let mut peer = peer_document();
     peer["capabilities"] = json!(["key_usage"]);
     peer["pool"] = json!({"disclosure":"none"});
+    peer["usage"]["data"]["allowed"] = json!(false);
+    peer["usage"]["data"]["daily"]["limit_reached"] = json!(true);
     peer["usage"]["data"]["daily"]["used"] = json!("10.0000");
     peer["usage"]["data"]["daily"]["remaining"] = json!("0.0000");
     Mock::given(method("GET"))
@@ -718,72 +1014,14 @@ async fn smart_prefers_another_account_when_key_budget_is_exhausted_without_pool
         )
         .await;
     cycle(&worker(&mut bundle)).await;
-    let provider = ProviderKind::new("openai").unwrap();
-    let model = UpstreamModelId::new("gpt-5.4").unwrap();
-    let scope = Arc::new(FrozenAccountScope::new(
-        Arc::new(RuntimeAccountDirectory::new(BTreeMap::from([
-            (
-                ProviderAccountId::new("acct_peer").unwrap(),
-                RuntimeAccount::new(provider.clone(), BTreeSet::new()),
-            ),
-            (
-                ProviderAccountId::new("acct_available").unwrap(),
-                RuntimeAccount::new(provider.clone(), BTreeSet::new()),
-            ),
-        ]))),
-        ClientRoutingScope::all_accounts(),
-    ));
-    let operation = Operation::Generate(GenerateRequest::from_protocol_payload(
-        ProtocolPayload::json_object(
-            "openai",
-            json!({"model":"gpt-5.4", "input":"budget routing"})
-                .as_object()
-                .unwrap()
-                .clone(),
-        )
-        .unwrap(),
-    ));
-    let snapshot = RuntimeSnapshot::new(
-        ConfigRevision::new(1).unwrap(),
-        gateway_core::settings::SettingsValues::new(2, "smart", Default::default(), None, None),
-        vec![provider.clone()],
-        vec![ProviderModel::new(
-            provider,
-            model,
-            ModelCapabilities::new(BTreeSet::from([operation.kind()]), Some(32_000))
-                .with_upstream_feature_validation(),
-        )],
-        Vec::new(),
-    )
-    .unwrap();
-    let plan = snapshot
-        .plan(
-            &PublicModelId::new("gpt-5.4").unwrap(),
-            &operation,
-            scope.clone(),
-            &RoutingContext::default(),
-        )
-        .unwrap();
-    let context = AttemptContext::new(
-        RequestAttemptContext::new(
-            ModelRequestId::new("req_peer_smart").unwrap(),
-            ClientApiKeyId::new("key_peer_smart").unwrap(),
-        ),
-        NonZeroU32::new(1).unwrap(),
-        SystemTime::now() + Duration::from_secs(5),
-        account_policy(),
-        AccountAttemptContext::new(BTreeSet::new(), None, None).with_account_scope(scope),
-        None,
-        CancellationToken::new(),
+    assert!(
+        accounts
+            .account("acct_peer")
+            .unwrap()
+            .quota()
+            .is_exhausted()
     );
-    let mut response = bundle
-        .core_provider()
-        .execute(
-            ProviderRequest::new(operation, plan.candidates()[0].clone()),
-            context,
-        )
-        .await
-        .unwrap();
+    let mut response = execute_peer_request(&bundle, "smart").await.unwrap();
     assert_eq!(
         response.metadata().provider_account_id().as_str(),
         "acct_available"
@@ -1046,9 +1284,84 @@ async fn cold_lists_bound_full_snapshot_batches_and_reuse_every_hydrated_summary
     );
 }
 
+async fn execute_peer_request(
+    bundle: &PeerFixture,
+    strategy: &str,
+) -> Result<gateway_core::engine::provider::ProviderStream, gateway_core::error::ProviderError> {
+    let provider = ProviderKind::new("openai").unwrap();
+    let model = UpstreamModelId::new("gpt-5.4").unwrap();
+    let scope = Arc::new(FrozenAccountScope::new(
+        Arc::new(RuntimeAccountDirectory::new(BTreeMap::from([
+            (
+                ProviderAccountId::new("acct_peer").unwrap(),
+                RuntimeAccount::new(provider.clone(), BTreeSet::new()),
+            ),
+            (
+                ProviderAccountId::new("acct_available").unwrap(),
+                RuntimeAccount::new(provider.clone(), BTreeSet::new()),
+            ),
+        ]))),
+        ClientRoutingScope::all_accounts(),
+    ));
+    let operation = Operation::Generate(GenerateRequest::from_protocol_payload(
+        ProtocolPayload::json_object(
+            "openai",
+            json!({"model":"gpt-5.4", "input":"budget routing"})
+                .as_object()
+                .unwrap()
+                .clone(),
+        )
+        .unwrap(),
+    ));
+    let snapshot = RuntimeSnapshot::new(
+        ConfigRevision::new(1).unwrap(),
+        gateway_core::settings::SettingsValues::new(2, strategy, Default::default(), None, None),
+        vec![provider.clone()],
+        vec![ProviderModel::new(
+            provider,
+            model,
+            ModelCapabilities::new(BTreeSet::from([operation.kind()]), Some(32_000))
+                .with_upstream_feature_validation(),
+        )],
+        Vec::new(),
+    )
+    .unwrap();
+    let plan = snapshot
+        .plan(
+            &PublicModelId::new("gpt-5.4").unwrap(),
+            &operation,
+            scope.clone(),
+            &RoutingContext::default(),
+        )
+        .unwrap();
+    let context = AttemptContext::new(
+        RequestAttemptContext::new(
+            ModelRequestId::new("req_peer_smart").unwrap(),
+            ClientApiKeyId::new("key_peer_smart").unwrap(),
+        ),
+        NonZeroU32::new(1).unwrap(),
+        SystemTime::now() + Duration::from_secs(5),
+        gateway_core::account::AccountSelectionPolicy::new(
+            gateway_core::account::RotationStrategy::parse(strategy).unwrap(),
+            NonZeroU32::new(2).unwrap(),
+        ),
+        AccountAttemptContext::new(BTreeSet::new(), None, None).with_account_scope(scope),
+        None,
+        CancellationToken::new(),
+    );
+    bundle
+        .core_provider()
+        .execute(
+            ProviderRequest::new(operation, plan.candidates()[0].clone()),
+            context,
+        )
+        .await
+}
+
 struct PeerFixture {
     provider: provider_openai::ProviderBundle,
     peer: gateway_admin::PeerUpstreamBundle,
+    cooldowns: Arc<MemoryCooldownPort>,
 }
 
 impl PeerFixture {
@@ -1071,12 +1384,21 @@ async fn peer_fixture(
     store: Arc<MemoryUpstreamInfoStore>,
 ) -> PeerFixture {
     let reader = Arc::new(gateway_core::account::UpstreamInfoReader::default());
+    let cooldowns = Arc::new(MemoryCooldownPort::new());
     let provider = provider_openai::initialize(
         config,
-        provider_ports_with_catalog(
+        ProviderStorePorts::new(
             accounts.clone(),
-            Arc::new(TestOAuthPending::default()),
+            Arc::new(TestLeaseCoordinator::default()),
+            Arc::new(MemorySessionAffinity::default()),
+            Arc::new(MemorySessionExclusions::default()),
             Arc::new(TestCatalogCache::default()),
+            Arc::new(TestArtifactProfiles),
+            Arc::new(TestCredentialState),
+            cooldowns.clone(),
+            Arc::new(TestRuntimePolicy),
+            Arc::new(TestOAuthPending::default()),
+            Arc::new(RecordingDiagnostics::default()),
         ),
         reader.clone(),
     )
@@ -1095,5 +1417,9 @@ async fn peer_fixture(
     )
     .unwrap();
     reader.bind(&peer.scheduling_source()).unwrap();
-    PeerFixture { provider, peer }
+    PeerFixture {
+        provider,
+        peer,
+        cooldowns,
+    }
 }

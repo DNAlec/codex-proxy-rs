@@ -424,29 +424,7 @@ impl ProviderAccountRepository for PgProviderAccountRepository {
         expected_revision: Revision,
         state: QuotaState,
     ) -> StoreResult<bool> {
-        require_nonempty(ENTITY, "account_id", account_id)?;
-        let observed_at = state
-            .observed_at()
-            .map(DateTime::<Utc>::from)
-            .ok_or_else(|| invalid("quota access change requires observed_at"))?;
-        let result = sqlx::query(
-            "update provider_accounts
-             set quota_access_observed_at = $3, quota_access_state = $4,
-                 quota_evidence = $5, quota_reset_at = $6,
-                 updated_at = greatest(now(), updated_at, $3)
-             where id = $1 and credential_revision = $2
-               and (quota_access_observed_at is null or quota_access_observed_at <= $3)",
-        )
-        .bind(account_id)
-        .bind(to_i64(expected_revision.get())?)
-        .bind(observed_at)
-        .bind(state.access().as_str())
-        .bind(state.evidence().map(QuotaEvidence::as_str))
-        .bind(state.reset_at().map(DateTime::<Utc>::from))
-        .execute(&self.pool)
-        .await
-        .map_err(|source| postgres_unavailable("apply provider quota access", source))?;
-        Ok(result.rows_affected() == 1)
+        write_quota_access(&self.pool, account_id, expected_revision, state).await
     }
 
     async fn touch_provider_quota_observation(
@@ -1248,4 +1226,39 @@ impl PgProviderAccountRepository {
         .map_err(|source| postgres_unavailable("load account summaries", source))?;
         rows.into_iter().map(account_summary_from_row).collect()
     }
+}
+
+/// 真实请求反馈与互联同步共用额度事实写入，调用方可将其并入已有事务
+pub(super) async fn write_quota_access<'e, E>(
+    executor: E,
+    account_id: &str,
+    expected_revision: Revision,
+    state: QuotaState,
+) -> StoreResult<bool>
+where
+    E: sqlx::Executor<'e, Database = sqlx::Postgres>,
+{
+    require_nonempty(ENTITY, "account_id", account_id)?;
+    let observed_at = state
+        .observed_at()
+        .map(DateTime::<Utc>::from)
+        .ok_or_else(|| invalid("quota access change requires observed_at"))?;
+    let result = sqlx::query(
+        "update provider_accounts
+             set quota_access_observed_at = $3, quota_access_state = $4,
+                 quota_evidence = $5, quota_reset_at = $6,
+                 updated_at = greatest(now(), updated_at, $3)
+             where id = $1 and credential_revision = $2
+               and (quota_access_observed_at is null or quota_access_observed_at <= $3)",
+    )
+    .bind(account_id)
+    .bind(to_i64(expected_revision.get())?)
+    .bind(observed_at)
+    .bind(state.access().as_str())
+    .bind(state.evidence().map(QuotaEvidence::as_str))
+    .bind(state.reset_at().map(DateTime::<Utc>::from))
+    .execute(executor)
+    .await
+    .map_err(|source| postgres_unavailable("apply provider quota access", source))?;
+    Ok(result.rows_affected() == 1)
 }

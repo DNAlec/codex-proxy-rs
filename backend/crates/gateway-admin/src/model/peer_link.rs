@@ -2,7 +2,7 @@
 
 use super::provider_credentials::ProviderQuotaWindowRole;
 use chrono::{DateTime, Utc};
-use gateway_core::engine::budget::ClientBudgetStatus;
+use gateway_core::engine::budget::{ClientBudgetAccess, ClientBudgetStatus};
 
 /// 调用边界提供的响应资源预算，超限时整体拒绝而不截断授权范围
 #[derive(Debug, Clone, Copy)]
@@ -25,6 +25,7 @@ pub struct PeerLinkExport {
     pub observed_at: DateTime<Utc>,
     pub expires_at: DateTime<Utc>,
     pub budget: ClientBudgetStatus,
+    pub budget_access: ClientBudgetAccess,
     pub budget_observed_at: DateTime<Utc>,
     pub pool: Option<PeerPoolSummary>,
     pub quota: Option<Vec<PeerAccountQuota>>,

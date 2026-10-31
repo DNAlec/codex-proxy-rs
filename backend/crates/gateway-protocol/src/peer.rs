@@ -54,6 +54,9 @@ pub struct PeerUsage {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PeerKeyUsage {
     pub unit: String,
+    /// 上游账本给出的访问结论，缺失时不能根据展示金额推断恢复
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub allowed: Option<bool>,
     pub daily: PeerBudgetWindow,
     pub weekly: PeerBudgetWindow,
 }
@@ -61,6 +64,8 @@ pub struct PeerKeyUsage {
 /// 金额保留十进制字符串，不限额时 total 与 remaining 为 null
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PeerBudgetWindow {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub limit_reached: Option<bool>,
     pub total: Option<String>,
     pub used: String,
     pub remaining: Option<String>,

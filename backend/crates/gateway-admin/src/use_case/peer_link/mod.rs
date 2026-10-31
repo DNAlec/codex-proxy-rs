@@ -119,6 +119,10 @@ impl PeerLinkService for DefaultPeerLinkService {
             node,
             observed_at: now,
             expires_at: now + TimeDelta::minutes(5),
+            budget_access: key
+                .budget
+                .limits
+                .access(key.budget.daily_used_usd, key.budget.weekly_used_usd),
             budget: key.budget,
             budget_observed_at,
             pool: None,

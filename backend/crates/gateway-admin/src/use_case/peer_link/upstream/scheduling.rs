@@ -4,9 +4,9 @@ use std::{collections::HashMap, sync::Arc, time::SystemTime};
 
 use gateway_protocol::peer::{PeerComponentStatus, PeerLink, PeerModelCoverage, PeerModelState};
 
-use super::snapshot;
+use super::{quota, snapshot};
 
-use gateway_core::account::UpstreamSchedulingSignal;
+use gateway_core::account::{QuotaAccessState, UpstreamSchedulingSignal};
 
 #[derive(Clone, Copy)]
 struct Validity {
@@ -75,14 +75,22 @@ impl SchedulingObservation {
             && let Some(usage) = &peer.usage.data
             && let Some(usage_validity) =
                 Validity::component(peer.usage.observed_at.as_deref(), None)
+            && quota::access(usage, now) == QuotaAccessState::Exhausted
         {
-            for window in [&usage.daily, &usage.weekly] {
-                if snapshot::budget_exhausted(window, now) {
-                    let mut validity = usage_validity;
-                    if let Some(reset) = window.resets_at.as_deref().and_then(snapshot::timestamp) {
-                        validity.expires_at = validity.expires_at.min(reset);
+            if usage.allowed.is_some() {
+                exhausted_budgets.push(usage_validity);
+            } else {
+                // 窗口提供的补充证据只在各自重置边界之前影响调度评分
+                for window in [&usage.daily, &usage.weekly] {
+                    if quota::window_access(window, now) == QuotaAccessState::Exhausted {
+                        let mut validity = usage_validity;
+                        if let Some(reset) =
+                            window.resets_at.as_deref().and_then(snapshot::timestamp)
+                        {
+                            validity.expires_at = validity.expires_at.min(reset);
+                        }
+                        exhausted_budgets.push(validity);
                     }
-                    exhausted_budgets.push(validity);
                 }
             }
         }

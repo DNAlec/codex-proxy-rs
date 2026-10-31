@@ -1,4 +1,4 @@
-//! 上游互联观测与后台计划；原始协议由控制面解释，不改变账号自身额度状态
+//! 上游互联观测、后台计划与额度恢复合同，原始协议由控制面解释
 
 use std::{
     sync::{Arc, OnceLock, Weak},
@@ -7,7 +7,9 @@ use std::{
 
 use sha2::{Digest, Sha256};
 
-use super::{CredentialRevision, OpaqueProviderData, ProviderAccount, ProviderAccountId};
+use super::{
+    CredentialRevision, OpaqueProviderData, ProviderAccount, ProviderAccountId, QuotaState,
+};
 
 /// 请求发出时的连接身份；出口摘要包含托管代理解析后的认证信息，但不持久化明文
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -110,6 +112,8 @@ pub struct UpstreamInfoCompletion {
     pub completed_at: SystemTime,
     pub next_attempt_at: SystemTime,
     pub result: Result<OpaqueProviderData, UpstreamInfoFailure>,
+    /// 控制面确认的额度事实，随有效快照原子提交，未知或过期观测不得覆盖既有事实
+    pub quota: Option<QuotaState>,
 }
 
 /// 调度侧只消费已发布的中立观测，不读取协议、凭据或持久存储

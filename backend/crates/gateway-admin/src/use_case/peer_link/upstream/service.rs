@@ -1,4 +1,4 @@
-//! 后台计划协调与仅供 Smart 排序的内存观测
+//! 互联后台同步、额度恢复与 Smart 排序观测
 
 use std::{
     collections::{BTreeMap, HashMap},
@@ -27,7 +27,7 @@ use crate::ports::{
     provider::{ProviderAdmin, ProviderAdminRegistry},
 };
 
-use super::{scheduling::SchedulingObservation, snapshot};
+use super::{quota, scheduling::SchedulingObservation, snapshot};
 
 const BATCH_SIZE: u32 = 100;
 const FETCH_BATCH: u32 = 20;
@@ -334,12 +334,18 @@ impl PeerInfoService {
         let Some(authentication) = self.connection(&loaded) else {
             return self.reconcile(&loaded).await;
         };
+        let started_at = SystemTime::now();
         let (result, retry_after) =
             match self.transport.fetch(&loaded.account, &authentication).await {
                 Ok(bytes) => (snapshot::parse(&bytes, SystemTime::now()), None),
                 Err(failure) => (Err(failure.kind), failure.retry_after),
             };
         let now = SystemTime::now();
+        let quota = result
+            .as_ref()
+            .ok()
+            .and_then(snapshot::decode)
+            .and_then(|peer| quota::observe(&peer, started_at, now));
         let delay = match result {
             Ok(_) => Duration::from_secs(240 + stable_jitter(loaded.account.id().as_str())),
             Err(UpstreamInfoFailure::Unauthorized | UpstreamInfoFailure::Unsupported) => {
@@ -359,6 +365,7 @@ impl PeerInfoService {
             completed_at: now,
             next_attempt_at: now + delay,
             result,
+            quota,
         };
         if self.store.complete(completion).await? {
             self.refresh_cache(std::slice::from_ref(loaded.account.id()))

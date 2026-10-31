@@ -680,6 +680,10 @@ SSE/WS 的 `response.failed` 保留原消息、响应 ID 与其他业务字段�
 
 明确额度耗尽触发账号隔离与安全换号，包括 WebSocket 握手返回的 429；不会因其长 `Retry-After` 而转入同账号传输恢复等待
 
+Client Key 日周预算超限返回 `429`，`error.type` 为官方额度耗尽类型 `usage_limit_reached`，
+`error.code` 分别保留 `key_daily_budget_exceeded` 与 `key_weekly_budget_exceeded`，`Retry-After` 指向预算重置边界。
+下游按官方错误类型确认额度耗尽，由互联预算同步确认恢复，不写普通限流冷却；普通 429 限流仍独立处理
+
 OpenAI 选号阶段确认本次可选账号全部额度耗尽时，HTTP 返回 `429`，WebSocket 错误帧返回
 `status: 429`，两者的 `error.type` 与 `error.code` 均为 `usage_limit_reached`，提示客户端停止
 本轮自动重试，等待额度恢复或补充可用账号。空账号池、认证失效和临时容量不足不按额度耗尽处理；
@@ -742,8 +746,9 @@ OpenAI 选号阶段确认本次可选账号全部额度耗尽时，HTTP 返回 `
     "observed_at": "2026-10-29T12:00:00Z",
     "data": {
       "unit": "USD",
-      "daily": { "total": "1", "used": "0.6", "remaining": "0.4", "resetsAt": "2026-10-29T16:00:00Z" },
-      "weekly": { "total": null, "used": "2", "remaining": null, "resetsAt": null }
+      "allowed": true,
+      "daily": { "limit_reached": false, "total": "1", "used": "0.6", "remaining": "0.4", "resetsAt": "2026-10-29T16:00:00Z" },
+      "weekly": { "limit_reached": false, "total": null, "used": "2", "remaining": null, "resetsAt": null }
     }
   },
   "pool": { "disclosure": "none" },
@@ -753,6 +758,10 @@ OpenAI 选号阶段确认本次可选账号全部额度耗尽时，HTTP 返回 `
 
 `usage.data` 沿用 [API Key 额度查询](#api-key-额度查询) 的十进制金额、窗口及不限额语义。
 `usage.status` 可为 `available`、`unavailable` 或 `unknown`；没有可用数据时不把缺失值解释为零余额
+
+`usage.data.allowed` 是上游根据本地预算账本给出的访问结论，日周窗口的 `limit_reached` 表示对应预算是否耗尽。
+接入端以明确的 `allowed` 为准；缺失时，仍有效的 `limit_reached: true` 只能证明耗尽，不能据此推断恢复。
+缺少这些状态字段时金额仅用于展示，接入端不从 `total`、`used` 或 `remaining` 计算账号资格
 
 | 能力 | 数据合同 | 公开条件 |
 | --- | --- | --- |
@@ -1088,6 +1097,12 @@ Key 消费窗口的 `localUsage` 按各自 `[resetAt - windowSeconds, resetAt)` 
 
 网络错误、限流或无效响应保留同一连接的旧观测；401/403 或连接身份变化清除旧观测。
 单个账号停用时停止同步并清理互联观测，重新启用后建立计划
+
+成功同步后，明确的预算访问结论决定账号是否进入 `quota_exhausted`；
+有效的 `usage.data.allowed: true` 自动解除更早的耗尽，恢复参与调度。
+Key 预算及其访问状态随互联默认公开，不要求开启 `shareQuota`。
+快照和预算观测必须仍有效且晚于耗尽事实，重置时间到期、金额变化、缺失状态或查询失败均不代表恢复。
+恢复只改变额度状态，凭据错误和独立的 `rate_limited` 冷却仍按各自规则处理
 
 ### 账号模型限制
 

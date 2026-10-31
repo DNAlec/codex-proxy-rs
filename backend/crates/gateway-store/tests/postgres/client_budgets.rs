@@ -589,7 +589,7 @@ async fn budgets_settle_exactly_once_and_enforce_each_threshold_across_store_ins
     assert_eq!(day.daily_used_usd.canonical(), "0.3");
     assert_eq!(day.weekly_used_usd.canonical(), "0.3");
     let day_error = second.admit(key_id("day")).await.unwrap_err();
-    assert_eq!(day_error.kind(), GatewayErrorKind::RateLimited);
+    assert_eq!(day_error.kind(), GatewayErrorKind::BudgetExhausted);
     assert_eq!(
         day_error.client_error_code(),
         Some("key_daily_budget_exceeded")
@@ -1160,7 +1160,7 @@ async fn plugin_budget_limits_preserve_consumption_and_unrelated_configuration_a
     );
     assert_eq!(
         budgets.admit(key_id("key")).await.unwrap_err().kind(),
-        GatewayErrorKind::RateLimited
+        GatewayErrorKind::BudgetExhausted
     );
     assert!(
         store

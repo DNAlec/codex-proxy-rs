@@ -3,8 +3,8 @@
 use std::time::{Duration, SystemTime};
 
 use gateway_core::account::{
-    UpstreamConnection, UpstreamInfoClaim, UpstreamInfoCompletion, UpstreamInfoFailure,
-    UpstreamInfoPlan, UpstreamInfoRecord, UpstreamInfoStore,
+    QuotaAccessState, UpstreamConnection, UpstreamInfoClaim, UpstreamInfoCompletion,
+    UpstreamInfoFailure, UpstreamInfoPlan, UpstreamInfoRecord, UpstreamInfoStore,
 };
 use sqlx::postgres::PgRow;
 
@@ -272,6 +272,27 @@ impl UpstreamInfoStore for PgProviderAccountRepository {
         .execute(&mut *transaction)
         .await
         .map_err(database_error)?;
+        if result.rows_affected() == 1
+            && failure.is_none()
+            && let Some(state) = completion.quota
+            && state.access() != QuotaAccessState::Unknown
+            && let Some(observed_at) = state.observed_at()
+            && account
+                .quota()
+                .observed_at()
+                .is_none_or(|current| current < observed_at)
+        {
+            // 连接与领取围栏已核对，行锁内拒绝同刻及更早的事实，再复用通用写入
+            super::repository::write_quota_access(
+                &mut *transaction,
+                completion.connection.account_id.as_str(),
+                Revision::new(completion.connection.credential_revision.get())
+                    .map_err(crate::core_store_error)?,
+                state,
+            )
+            .await
+            .map_err(crate::core_store_error)?;
+        }
         transaction.commit().await.map_err(database_error)?;
         Ok(result.rows_affected() == 1)
     }

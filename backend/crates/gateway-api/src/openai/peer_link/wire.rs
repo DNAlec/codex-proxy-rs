@@ -89,15 +89,18 @@ pub(super) fn response(export: PeerLinkExport) -> PeerLink {
             observed_at: Some(export.budget_observed_at.to_rfc3339()),
             data: Some(PeerKeyUsage {
                 unit: "USD".to_owned(),
+                allowed: Some(export.budget_access.allowed()),
                 daily: budget_window(
                     export.budget.limits.daily_usd,
                     export.budget.daily_used_usd,
                     export.budget.daily_resets_at,
+                    export.budget_access.daily_limit_reached,
                 ),
                 weekly: budget_window(
                     export.budget.limits.weekly_usd,
                     export.budget.weekly_used_usd,
                     export.budget.weekly_resets_at,
+                    export.budget_access.weekly_limit_reached,
                 ),
             }),
         },
@@ -125,9 +128,15 @@ pub(super) fn response(export: PeerLinkExport) -> PeerLink {
     }
 }
 
-fn budget_window(total: Decimal, used: Decimal, resets_at: Option<SystemTime>) -> PeerBudgetWindow {
+fn budget_window(
+    total: Decimal,
+    used: Decimal,
+    resets_at: Option<SystemTime>,
+    limit_reached: bool,
+) -> PeerBudgetWindow {
     let limited = total != Decimal::ZERO;
     PeerBudgetWindow {
+        limit_reached: Some(limit_reached),
         total: limited.then(|| total.canonical()),
         used: used.canonical(),
         remaining: limited.then(|| total.saturating_sub(used).canonical()),
