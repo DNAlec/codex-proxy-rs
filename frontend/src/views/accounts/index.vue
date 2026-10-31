@@ -324,7 +324,7 @@ const {
 
             <template #planType="{ row }">
               <div class="flex min-w-0 justify-center">
-                <AccountPlanBadge :authentication-kind="row.authenticationKind" :plan-type="row.planType" :plan-type-display="row.planTypeDisplay" />
+                <AccountPlanBadge :upstream="row.upstream" :authentication-kind="row.authenticationKind" :plan-type="row.planType" :plan-type-display="row.planTypeDisplay" />
               </div>
             </template>
 

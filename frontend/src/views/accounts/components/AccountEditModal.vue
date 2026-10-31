@@ -23,6 +23,7 @@ defineProps<{
 
 const emit = defineEmits<{
   save: []
+  afterLeave: []
 }>()
 
 const { t } = useI18n({ useScope: 'global' })
@@ -50,8 +51,9 @@ const selectedGroupIds = defineModel<string[]>('selectedGroupIds', { required: t
     :title="t('accounts.editor.title')"
     width="42rem"
     :show-close="!saving" :close-on-click-modal="!saving" :close-on-press-escape="!saving"
+    @closed="emit('afterLeave')"
   >
-    <div v-if="account" class="grid gap-5">
+    <div v-if="account" class="grid min-w-0 grid-cols-1 gap-5">
       <div
         class="flex flex-wrap items-center justify-between gap-4 rounded-cp bg-cp-fill-quaternary px-4 py-3.5"
       >
@@ -62,7 +64,7 @@ const selectedGroupIds = defineModel<string[]>('selectedGroupIds', { required: t
           show-notes
         />
         <div class="flex shrink-0 items-center gap-3">
-          <AccountPlanBadge :authentication-kind="account.authenticationKind" :plan-type="account.planType" :plan-type-display="account.planTypeDisplay" size="sm" />
+          <AccountPlanBadge :upstream="account.upstream" :authentication-kind="account.authenticationKind" :plan-type="account.planType" :plan-type-display="account.planTypeDisplay" size="sm" />
           <ProviderIconGroup
             :provider="account.provider"
             :authentication-kind="account.authenticationKind"

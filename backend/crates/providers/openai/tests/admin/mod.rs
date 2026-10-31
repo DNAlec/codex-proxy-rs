@@ -1,5 +1,7 @@
 //! 验证 OpenAI 管理能力、请求画像、Bundle 组装与额度投影
 
+mod peer_info;
+
 use std::collections::{BTreeMap, BTreeSet};
 use std::num::NonZeroU32;
 use std::sync::{Arc, Mutex};
@@ -69,9 +71,13 @@ const COMPLETED_SESSION_SSE: &str = concat!(
 #[tokio::test]
 async fn plan_display_should_distinguish_pro_tiers_and_preserve_other_official_names() {
     let config = valid_config();
-    let bundle = provider_openai::initialize(config.config.clone(), provider_ports())
-        .await
-        .unwrap();
+    let bundle = provider_openai::initialize(
+        config.config.clone(),
+        provider_ports(),
+        Arc::new(gateway_core::account::UpstreamInfoReader::default()),
+    )
+    .await
+    .unwrap();
     let admin = bundle.admin_provider();
     for (raw, display) in [
         ("prolite", "ProLite"),
@@ -105,9 +111,13 @@ async fn plan_display_should_distinguish_pro_tiers_and_preserve_other_official_n
 #[tokio::test]
 async fn account_capabilities_distinguish_oauth_from_api_key_and_unknown_credentials() {
     let config = valid_config();
-    let bundle = provider_openai::initialize(config.config.clone(), provider_ports())
-        .await
-        .unwrap();
+    let bundle = provider_openai::initialize(
+        config.config.clone(),
+        provider_ports(),
+        Arc::new(gateway_core::account::UpstreamInfoReader::default()),
+    )
+    .await
+    .unwrap();
     let provider = bundle.admin_provider();
     let id = ProviderAccountId::new("acct_capabilities").unwrap();
     let oauth = provider.account_capabilities(&id, "oauth");
@@ -128,9 +138,13 @@ async fn account_capabilities_distinguish_oauth_from_api_key_and_unknown_credent
 #[tokio::test]
 async fn custom_identity_preview_and_dashboard_share_the_exact_request_profile() {
     let config = valid_config();
-    let bundle = provider_openai::initialize(config.config.clone(), provider_ports())
-        .await
-        .unwrap();
+    let bundle = provider_openai::initialize(
+        config.config.clone(),
+        provider_ports(),
+        Arc::new(gateway_core::account::UpstreamInfoReader::default()),
+    )
+    .await
+    .unwrap();
     let provider = bundle.admin_provider();
     let user_agent =
         "codex_exec/0.156.1 (Ubuntu 24.4.0; x86_64) xterm-256color (codex_exec; 0.156.1)";
@@ -157,9 +171,13 @@ async fn custom_identity_preview_and_dashboard_share_the_exact_request_profile()
 #[tokio::test]
 async fn openai_bundle_exposes_one_core_provider_and_drains_worker_contributions_once() {
     let config = valid_config();
-    let mut bundle = provider_openai::initialize(config.config.clone(), provider_ports())
-        .await
-        .expect("OpenAI bundle");
+    let mut bundle = provider_openai::initialize(
+        config.config.clone(),
+        provider_ports(),
+        Arc::new(gateway_core::account::UpstreamInfoReader::default()),
+    )
+    .await
+    .expect("OpenAI bundle");
 
     assert_eq!(bundle.core_provider().name(), "openai");
     assert_eq!(bundle.admin_provider().provider_kind().as_str(), "openai");
@@ -232,11 +250,16 @@ async fn openai_bundle_exposes_one_core_provider_and_drains_worker_contributions
 #[tokio::test]
 async fn quota_forecast_observation_reuses_protocol_parser_and_keeps_window_identity() {
     let config = valid_config();
-    let bundle = provider_openai::initialize(config.config.clone(), provider_ports())
-        .await
-        .unwrap();
+    let bundle = provider_openai::initialize(
+        config.config.clone(),
+        provider_ports(),
+        Arc::new(gateway_core::account::UpstreamInfoReader::default()),
+    )
+    .await
+    .unwrap();
     let provider = bundle.admin_provider();
     let mut window = gateway_admin::model::provider_credentials::ProviderQuotaWindow {
+        upstream: None,
         key: "codex:604800s".to_owned(),
         group: "shortTerm".to_owned(),
         label: "周额度".to_owned(),
@@ -332,6 +355,7 @@ async fn initialized_provider_keeps_thread_spawn_transport_conversations_distinc
     let bundle = provider_openai::initialize(
         config.config.clone(),
         provider_ports_with(store, Arc::new(TestOAuthPending::default())),
+        Arc::new(gateway_core::account::UpstreamInfoReader::default()),
     )
     .await
     .expect("initialized OpenAI provider");
@@ -400,9 +424,13 @@ async fn copying_builtin_prices_keeps_cache_read_and_write_fallback_costs() {
         OpenAiBillingUsage, openai_billing_breakdown, openai_billing_breakdown_with_override,
     };
     let config = valid_config();
-    let bundle = provider_openai::initialize(config.config.clone(), provider_ports())
-        .await
-        .unwrap();
+    let bundle = provider_openai::initialize(
+        config.config.clone(),
+        provider_ports(),
+        Arc::new(gateway_core::account::UpstreamInfoReader::default()),
+    )
+    .await
+    .unwrap();
     let prices = bundle.admin_provider().pricing_catalog();
     for model in [
         "gpt-4",
@@ -444,9 +472,13 @@ async fn copying_builtin_prices_keeps_cache_read_and_write_fallback_costs() {
 #[tokio::test]
 async fn openai_admin_provider_exposes_live_wire_profile_and_validated_billing() {
     let config = valid_config();
-    let bundle = provider_openai::initialize(config.config.clone(), provider_ports())
-        .await
-        .expect("OpenAI bundle");
+    let bundle = provider_openai::initialize(
+        config.config.clone(),
+        provider_ports(),
+        Arc::new(gateway_core::account::UpstreamInfoReader::default()),
+    )
+    .await
+    .expect("OpenAI bundle");
     let admin = bundle.admin_provider();
     let baseline = admin.dashboard_wire_profile().expect("official baseline");
     assert_eq!(
@@ -528,9 +560,13 @@ async fn openai_admin_provider_exposes_live_wire_profile_and_validated_billing()
 #[tokio::test]
 async fn openai_legacy_billing_should_not_infer_long_context_flag() {
     let config = valid_config();
-    let bundle = provider_openai::initialize(config.config.clone(), provider_ports())
-        .await
-        .expect("OpenAI bundle");
+    let bundle = provider_openai::initialize(
+        config.config.clone(),
+        provider_ports(),
+        Arc::new(gateway_core::account::UpstreamInfoReader::default()),
+    )
+    .await
+    .expect("OpenAI bundle");
     let billing = bundle
         .admin_provider()
         .calculated_billing(&ProviderBillingInput {
@@ -614,9 +650,13 @@ async fn reset_credit_explicit_http_rejection_should_preserve_the_raw_body() {
 #[tokio::test]
 async fn openai_core_provider_projects_codex_request_observation_without_routing_side_effects() {
     let config = valid_config();
-    let bundle = provider_openai::initialize(config.config.clone(), provider_ports())
-        .await
-        .expect("OpenAI bundle");
+    let bundle = provider_openai::initialize(
+        config.config.clone(),
+        provider_ports(),
+        Arc::new(gateway_core::account::UpstreamInfoReader::default()),
+    )
+    .await
+    .expect("OpenAI bundle");
     let payload = ProtocolPayload::json_object(
         "openai",
         Map::from_iter([
@@ -654,6 +694,7 @@ async fn openai_admin_provider_persists_the_full_pending_envelope_and_binds_owne
             Arc::new(MemoryAccountStore::default()),
             Arc::clone(&pending),
         ),
+        Arc::new(gateway_core::account::UpstreamInfoReader::default()),
     )
     .await
     .expect("OpenAI bundle");
@@ -757,6 +798,7 @@ async fn openai_reauthorization_pending_payload_reuses_the_account_installation_
     let bundle = provider_openai::initialize(
         config.config.clone(),
         provider_ports_with(accounts, Arc::clone(&pending)),
+        Arc::new(gateway_core::account::UpstreamInfoReader::default()),
     )
     .await
     .expect("OpenAI bundle");
@@ -838,6 +880,7 @@ async fn openai_admin_reads_a_full_quota_page_in_one_store_call() {
     let bundle = provider_openai::initialize(
         config.config.clone(),
         provider_ports_with(Arc::clone(&store), Arc::new(TestOAuthPending::default())),
+        Arc::new(gateway_core::account::UpstreamInfoReader::default()),
     )
     .await
     .expect("OpenAI bundle");
@@ -935,6 +978,7 @@ async fn openai_admin_batch_quota_isolates_stale_and_invalid_observations() {
     let bundle = provider_openai::initialize(
         config.config.clone(),
         provider_ports_with(Arc::clone(&store), Arc::new(TestOAuthPending::default())),
+        Arc::new(gateway_core::account::UpstreamInfoReader::default()),
     )
     .await
     .expect("OpenAI bundle");
@@ -1007,6 +1051,7 @@ async fn openai_admin_provider_projects_cached_quota_models_and_canonical_export
             Arc::new(TestOAuthPending::default()),
             catalog_cache,
         ),
+        Arc::new(gateway_core::account::UpstreamInfoReader::default()),
     )
     .await
     .expect("OpenAI bundle");
@@ -1110,6 +1155,7 @@ async fn openai_admin_quota_refresh_updates_the_account_plan() {
     let bundle = provider_openai::initialize(
         config.config,
         provider_ports_with(store.clone(), Arc::new(TestOAuthPending::default())),
+        Arc::new(gateway_core::account::UpstreamInfoReader::default()),
     )
     .await
     .unwrap();
@@ -1151,6 +1197,7 @@ async fn openai_admin_quota_projects_credit_balance_from_refresh_and_cached_obse
     let bundle = provider_openai::initialize(
         config.config,
         provider_ports_with(store.clone(), Arc::new(TestOAuthPending::default())),
+        Arc::new(gateway_core::account::UpstreamInfoReader::default()),
     )
     .await
     .unwrap();
@@ -1257,6 +1304,7 @@ async fn openai_admin_projects_free_plan_from_cached_quota_when_account_claims_o
     let bundle = provider_openai::initialize(
         config.config.clone(),
         provider_ports_with(store, Arc::new(TestOAuthPending::default())),
+        Arc::new(gateway_core::account::UpstreamInfoReader::default()),
     )
     .await
     .expect("OpenAI bundle");
@@ -1356,6 +1404,7 @@ async fn openai_admin_provider_projects_official_codex_quota_and_independent_buc
     let bundle = provider_openai::initialize(
         config.config.clone(),
         provider_ports_with(Arc::clone(&store), Arc::new(TestOAuthPending::default())),
+        Arc::new(gateway_core::account::UpstreamInfoReader::default()),
     )
     .await
     .expect("OpenAI bundle");
@@ -1476,6 +1525,7 @@ async fn openai_admin_keeps_confirmed_exhaustion_separate_from_raw_usage_display
     let bundle = provider_openai::initialize(
         config.config.clone(),
         provider_ports_with(Arc::clone(&store), Arc::new(TestOAuthPending::default())),
+        Arc::new(gateway_core::account::UpstreamInfoReader::default()),
     )
     .await
     .expect("OpenAI bundle");
@@ -1588,6 +1638,7 @@ async fn openai_admin_preserves_expired_window_usage_and_exhaustion_attribution(
         let bundle = provider_openai::initialize(
             config.config.clone(),
             provider_ports_with(Arc::clone(&store), Arc::new(TestOAuthPending::default())),
+            Arc::new(gateway_core::account::UpstreamInfoReader::default()),
         )
         .await
         .expect("OpenAI bundle");
@@ -1667,6 +1718,7 @@ async fn openai_admin_provider_rejects_unprepared_mutations_before_store_commit(
     let bundle = provider_openai::initialize(
         config.config.clone(),
         provider_ports_with(store, Arc::new(TestOAuthPending::default())),
+        Arc::new(gateway_core::account::UpstreamInfoReader::default()),
     )
     .await
     .expect("OpenAI bundle");
@@ -1709,9 +1761,13 @@ async fn openai_admin_provider_rejects_unprepared_mutations_before_store_commit(
 #[tokio::test]
 async fn initialized_provider_reports_a_safe_pat_format_error_before_network_access() {
     let config = valid_config();
-    let bundle = provider_openai::initialize(config.config.clone(), provider_ports())
-        .await
-        .expect("OpenAI bundle");
+    let bundle = provider_openai::initialize(
+        config.config.clone(),
+        provider_ports(),
+        Arc::new(gateway_core::account::UpstreamInfoReader::default()),
+    )
+    .await
+    .expect("OpenAI bundle");
     let error = bundle
         .admin_provider()
         .prepare_import(PrepareCredentialImport {
@@ -1753,6 +1809,7 @@ async fn openai_rotation_preserves_the_new_access_token_jwt_expiration() {
     let bundle = provider_openai::initialize(
         config.config.clone(),
         provider_ports_with(store, Arc::new(TestOAuthPending::default())),
+        Arc::new(gateway_core::account::UpstreamInfoReader::default()),
     )
     .await
     .expect("OpenAI bundle");
@@ -1811,6 +1868,7 @@ async fn reset_credit_admin(
     let bundle = provider_openai::initialize(
         config.config.clone(),
         provider_ports_with(store, Arc::new(TestOAuthPending::default())),
+        Arc::new(gateway_core::account::UpstreamInfoReader::default()),
     )
     .await
     .expect("OpenAI reset-credit bundle");
@@ -1904,6 +1962,7 @@ pub(crate) async fn initialized_test_bundle(
     provider_openai::initialize(
         config.config.clone(),
         provider_ports_with(accounts, Arc::new(TestOAuthPending::default())),
+        Arc::new(gateway_core::account::UpstreamInfoReader::default()),
     )
     .await
     .expect("initialized provider")
@@ -2347,6 +2406,7 @@ mod errors {
         let bundle = provider_openai::initialize(
             config.config,
             provider_ports_with(store.clone(), Arc::new(TestOAuthPending::default())),
+            Arc::new(gateway_core::account::UpstreamInfoReader::default()),
         )
         .await
         .expect("OpenAI bundle");
@@ -2641,10 +2701,13 @@ mod errors {
         assert!(!format!("{error:?}").contains("invalid-success-secret-marker"));
 
         config.config.auth.oauth_token_endpoint = "http://127.0.0.1:0/oauth/token".to_owned();
-        let bundle =
-            provider_openai::initialize(config.config, refresh_ports(store.clone(), false))
-                .await
-                .unwrap();
+        let bundle = provider_openai::initialize(
+            config.config,
+            refresh_ports(store.clone(), false),
+            Arc::new(gateway_core::account::UpstreamInfoReader::default()),
+        )
+        .await
+        .unwrap();
         let error = bundle
             .admin_provider()
             .prepare_refresh(command())
@@ -2708,10 +2771,13 @@ mod errors {
             .await;
         let mut config = valid_config();
         config.config.auth.oauth_token_endpoint = format!("{}/oauth/token", server.uri());
-        let bundle =
-            provider_openai::initialize(config.config.clone(), refresh_ports(store.clone(), busy))
-                .await
-                .unwrap();
+        let bundle = provider_openai::initialize(
+            config.config.clone(),
+            refresh_ports(store.clone(), busy),
+            Arc::new(gateway_core::account::UpstreamInfoReader::default()),
+        )
+        .await
+        .unwrap();
         (bundle, store, config)
     }
 
@@ -2780,6 +2846,7 @@ async fn api_key_admin_exposes_only_configuration_and_preserves_key_when_rotatin
     let bundle = provider_openai::initialize(
         config.config.clone(),
         provider_ports_with(Arc::clone(&store), Arc::new(TestOAuthPending::default())),
+        Arc::new(gateway_core::account::UpstreamInfoReader::default()),
     )
     .await
     .unwrap();
@@ -2863,6 +2930,7 @@ async fn oauth_transport_settings_preserve_tokens_refresh_schedule_and_health() 
     let bundle = provider_openai::initialize(
         config.config.clone(),
         provider_ports_with(Arc::clone(&store), Arc::new(TestOAuthPending::default())),
+        Arc::new(gateway_core::account::UpstreamInfoReader::default()),
     )
     .await
     .unwrap();
@@ -2958,9 +3026,13 @@ async fn usage_quote_reuses_native_override_and_reports_incomplete_input() {
     use gateway_admin::ports::provider::ProviderUsagePricingInput;
     use gateway_core::metering::{ModelPriceOverride, Usage};
     let config = valid_config();
-    let bundle = provider_openai::initialize(config.config.clone(), provider_ports())
-        .await
-        .unwrap();
+    let bundle = provider_openai::initialize(
+        config.config.clone(),
+        provider_ports(),
+        Arc::new(gateway_core::account::UpstreamInfoReader::default()),
+    )
+    .await
+    .unwrap();
     let admin = bundle.admin_provider();
     let mut input = ProviderUsagePricingInput {
         upstream_model_id: "gpt-6-sol".into(),

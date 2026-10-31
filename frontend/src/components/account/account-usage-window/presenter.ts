@@ -72,7 +72,7 @@ const variantDefinitions: Record<
     labelClass: 'truncate text-cp-text-quaternary',
     valueClass: 'text-[10px] leading-[14px] font-heavy',
     trackOffsetClass: 'mt-auto',
-    trackShapeClass: 'h-[3px] w-full overflow-hidden rounded-full',
+    trackShapeClass: 'h-1 w-full overflow-hidden rounded-full',
     minimumBarWidth: '3px',
     compactValues: true,
     labelTooltip: true,
@@ -221,7 +221,7 @@ function usageWindowMode(
   window: AccountQuotaWindow | undefined,
   localUsage: AccountLocalUsage | null,
 ): AccountUsageWindowMode {
-  if (typeof window?.usedPercent === 'number')
+  if (typeof window?.usedPercent === 'number' || window?.amount)
     return 'quota'
   if (localUsage)
     return 'local'
@@ -239,9 +239,39 @@ function localTokenDisplay(localUsage: AccountLocalUsage | null) {
   return formatInteger(total)
 }
 
-export function quotaWindowLocalUsageDisplay(window: AccountQuotaWindow) {
+export function quotaWindowDetails(window: AccountQuotaWindow) {
   const localUsage = accountLocalUsage(window.localUsage)
-  return localTokenDisplay(localUsage) || null
+  const tokenDisplay = localTokenDisplay(localUsage) || null
+  const amountDisplay = window.amount?.usedDisplay ?? null
+  const hasConsumption = Boolean(tokenDisplay || amountDisplay)
+    || (!window.amount && localUsage?.totalTokens == null)
+  return {
+    stale: window.stale,
+    observationDisplay: [
+      window.stale
+        ? t('accounts.upstream.stale')
+        : null,
+      window.observedAtDisplay && window.observedAtDisplay !== '—'
+        ? t('accounts.upstream.observedAt', { time: window.observedAtDisplay })
+        : null,
+    ].filter(Boolean).join(' · '),
+    localUsageDisplay: tokenDisplay,
+    amountUsedDisplay: amountDisplay,
+    quotaValueDisplay: window.amount && window.usedPercent === null
+      ? window.amount.totalDisplay
+      : window.usedPercentDisplay,
+    consumptionDisplay: hasConsumption
+      ? [
+          amountDisplay,
+          tokenDisplay || (!window.amount && localUsage?.totalTokens == null
+            ? '—'
+            : null),
+        ].filter(Boolean).join(' · ')
+      : null,
+    resetAtDisplay: window.amount && window.resetAtDisplay === '—'
+      ? t('accounts.upstream.startsOnNextUse')
+      : window.resetAtDisplay,
+  }
 }
 
 const quotaWindowPeriods = [
@@ -352,7 +382,7 @@ function rollingWindowDurationDisplay(windowSeconds: number | null | undefined) 
 
 export function quotaWindowPresentation(window: AccountQuotaWindow, minimumWidth: string) {
   const percent = clamp(window.usedPercent ?? 0, 0, 100)
-  const tone = quotaWindowTone(window.usedPercent)
+  const tone = quotaWindowTone(window.stale ? null : window.usedPercent)
   return {
     barStyle: {
       width: `${percent}%`,
@@ -365,7 +395,7 @@ export function quotaWindowPresentation(window: AccountQuotaWindow, minimumWidth
   }
 }
 
-function quotaWindowTone(usedPercent: number | null): QuotaWindowTone {
+export function quotaWindowTone(usedPercent: number | null): QuotaWindowTone {
   if (usedPercent === null)
     return 'unknown'
   // 每个窗口按自身的已用比例分档，剩余不足 30% / 10% 时分别预警

@@ -6,8 +6,8 @@ import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AccountRequestTimeline from '@/components/account/account-usage-window/AccountRequestTimeline.vue'
 import {
+  quotaWindowDetails,
   quotaWindowLabel,
-  quotaWindowLocalUsageDisplay,
   quotaWindowPresentation,
   resolveAccountUsageWindowPresentation,
 } from '@/components/account/account-usage-window/presenter'
@@ -29,6 +29,7 @@ const items = computed(() => props.windows.map((window) => {
   })
 
   return {
+    ...quotaWindowDetails(window),
     key: window.key,
     local: view.mode === 'local',
     localLabel: view.local.label,
@@ -41,9 +42,6 @@ const items = computed(() => props.windows.map((window) => {
       : quotaWindowLabel(window),
     ariaLabel: quotaWindowLabel(window),
     usedPercent: window.usedPercent,
-    usedPercentDisplay: window.usedPercentDisplay,
-    localUsageDisplay: quotaWindowLocalUsageDisplay(window),
-    resetAtDisplay: window.resetAtDisplay,
     percentTextClass: presentation.percentTextClass,
     barClass: presentation.barClass,
     barStyle: presentation.barStyle,
@@ -97,10 +95,16 @@ const items = computed(() => props.windows.map((window) => {
         </template>
         <template v-else>
           <div class="flex min-w-0 items-baseline justify-between gap-2 text-cp-xs leading-3.5">
-            <span class="min-w-0 truncate font-bold text-cp-text-quaternary">
+            <span class="min-w-0 truncate font-bold text-cp-text-quaternary" :title="item.observationDisplay || undefined">
               {{ item.label }}
             </span>
             <span class="flex shrink-0 items-baseline gap-1.5 font-mono font-heavy tabular-nums">
+              <template v-if="item.amountUsedDisplay">
+                <strong class="text-cp-text-quaternary">
+                  {{ item.amountUsedDisplay }}<template v-if="item.usedPercent === null"> / {{ item.quotaValueDisplay }}</template>
+                </strong>
+                <span v-if="item.localUsageDisplay" class="font-normal text-cp-text-quaternary" aria-hidden="true">·</span>
+              </template>
               <strong
                 v-if="item.localUsageDisplay"
                 class="text-cp-text-quaternary"
@@ -109,10 +113,11 @@ const items = computed(() => props.windows.map((window) => {
                 {{ item.localUsageDisplay }}
               </strong>
               <strong
+                v-if="!item.amountUsedDisplay || item.usedPercent !== null"
                 :class="item.percentTextClass"
-                :title="t('accounts.quota.quotaUsed', { rate: item.usedPercentDisplay })"
+                :title="item.usedPercent === null ? undefined : t('accounts.quota.quotaUsed', { rate: item.quotaValueDisplay })"
               >
-                {{ item.usedPercentDisplay }}
+                {{ item.quotaValueDisplay }}
               </strong>
             </span>
           </div>
@@ -123,8 +128,8 @@ const items = computed(() => props.windows.map((window) => {
             :aria-label="item.ariaLabel"
             aria-valuemin="0"
             aria-valuemax="100"
-            :aria-valuenow="item.usedPercent ?? undefined"
-            :aria-valuetext="item.usedPercentDisplay"
+            :aria-valuenow="item.stale ? undefined : item.usedPercent ?? undefined"
+            :aria-valuetext="item.stale ? `${item.quotaValueDisplay} · ${item.observationDisplay}` : item.quotaValueDisplay"
           >
             <div
               class="h-full rounded-full transition-[width,background-color] duration-200 motion-reduce:transition-none"
