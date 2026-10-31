@@ -19,30 +19,60 @@ use gateway_core::{account::ProviderAccountId, routing::ProviderKind, runtime::S
 use super::{map_store_error, publish_committed};
 
 pub(super) async fn publish_credentials_and_observe_quota(
-    peer: Option<&dyn crate::ports::peer::PeerUpstreamService>,
+    peer: Option<&std::sync::Arc<dyn crate::ports::peer::PeerUpstreamService>>,
     provider: &std::sync::Arc<dyn crate::ports::provider::ProviderAdmin>,
+    accounts: &std::sync::Arc<dyn AccountStore>,
     snapshot: &dyn SnapshotControl,
     revision: crate::model::Revision,
     account_ids: &[ProviderAccountId],
     request_id: &str,
 ) -> Result<(), AdminError> {
-    notify_account_facts_changed(peer, provider.as_ref(), account_ids).await;
+    notify_account_facts_changed(peer.map(AsRef::as_ref), provider.as_ref(), account_ids).await;
     publish_committed(snapshot, revision).await?;
 
     // 凭据已经提交；额度只是可重建的观察，不能拖住管理请求或回滚提交结果
     let provider = provider.clone();
+    let peer = peer.cloned();
+    let accounts = accounts.clone();
     let account_ids = account_ids.to_vec();
     let request_id = request_id.to_owned();
     tokio::spawn(async move {
         for account_id in account_ids {
-            if let Err(error) = provider
-                .quota(ProviderQuotaRequest {
-                    account_id: account_id.clone(),
-                    refresh: true,
-                    rolling_usage: None,
-                })
+            let request = ProviderQuotaRequest {
+                account_id: account_id.clone(),
+                refresh: true,
+                rolling_usage: None,
+            };
+            let result = if let Some(peer) = peer.as_deref() {
+                let details = match required_credential(
+                    accounts.as_ref(),
+                    provider.provider_kind(),
+                    &account_id,
+                    "initial quota observation",
+                )
                 .await
-            {
+                {
+                    Ok(details) => details,
+                    Err(error) => {
+                        tracing::warn!(request_id, account_id = %account_id, error = %error, "initial quota account lookup failed");
+                        continue;
+                    }
+                };
+                if !details.credential.enabled {
+                    continue;
+                }
+                // 首查与手动刷新共用认证能力分派，互联协议由 Admin 解释
+                super::peer_link::upstream::read_quota(
+                    Some(peer),
+                    provider.as_ref(),
+                    &details.credential,
+                    request,
+                )
+                .await
+            } else {
+                provider.quota(request).await
+            };
+            if let Err(error) = result {
                 tracing::warn!(
                     request_id,
                     provider = %provider.provider_kind().as_str(),

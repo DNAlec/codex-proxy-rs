@@ -61,7 +61,40 @@ impl PeerInfoService {
     }
 
     pub(crate) async fn account_changed(&self, id: &ProviderAccountId) -> Result<(), StoreError> {
-        self.forget(id);
+        let has_observation = self
+            .observations
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .contains_key(id);
+        let has_attempt = self
+            .attempts
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .contains_key(id);
+        if !has_observation && !has_attempt {
+            return Ok(());
+        }
+        let Some(account) = self
+            .accounts
+            .get_account(id)
+            .await?
+            .filter(|account| self.supported(account))
+        else {
+            self.forget(id);
+            return Ok(());
+        };
+        let connection = UpstreamConnection::for_account(&account);
+        // 普通信息编辑保留观测与退避，连接变化由刷新状态中的身份比较处理
+        let mut observations = self
+            .observations
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if observations
+            .get(id)
+            .is_some_and(|cached| cached.connection != connection)
+        {
+            observations.remove(id);
+        }
         Ok(())
     }
 

@@ -9,7 +9,7 @@ import { computed, shallowRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AccountPlanBadge from '@/components/account/AccountPlanBadge.vue'
 import AccountUpstreamStatus from '@/components/account/AccountUpstreamStatus.vue'
-import { formatProviderLabel } from '@/utils/providers'
+import { accountUpstreamPending } from '@/utils/account-upstream'
 import { formatRelativeTime } from '@/utils/relative-time'
 import { usePoolQuotaWindows } from '../../composables/usePoolQuotaWindows'
 import { groupedAccountQuotaWindows, orderedPanelQuotaWindows } from '../../constants'
@@ -43,6 +43,8 @@ const quotaEntries = computed(() => groupedAccountQuotaWindows(
 ))
 const profileOpen = shallowRef(false)
 const forecastOpen = shallowRef(false)
+const hasPlanBadge = computed(() => !accountUpstreamPending(props.account.upstream)
+  && (Boolean(props.account.planType) || props.account.authenticationKind === 'api_key'))
 const hasForecast = computed(() => props.account.authenticationKind !== 'api_key')
 const hasPersonalInfo = computed(() => props.account.capabilities.profile || props.account.capabilities.subscription)
 const canRefresh = computed(() => props.account.capabilities.quotaRefresh || props.account.upstream?.discovered)
@@ -74,13 +76,9 @@ watch(hasPersonalInfo, (available) => {
         v-if="account.capabilities.quota || quotaEntries.length > 0 || account.upstream?.discovered"
         class="col-span-2 row-start-2 m-0 flex min-w-0 items-center gap-1.5 text-z-xs font-emphasis text-z-text-secondary"
       >
-        <span class="shrink-0 whitespace-nowrap">{{ t('accounts.quota.quota', { provider: formatProviderLabel(account.provider) }) }}</span>
-        <template v-if="account.planType || account.authenticationKind === 'api_key'">
-          <span class="shrink-0">·</span>
-          <AccountPlanBadge :upstream="account.upstream" :authentication-kind="account.authenticationKind" :plan-type="account.planType" :plan-type-display="account.planTypeDisplay" size="sm" class="shrink-0" />
-        </template>
+        <AccountPlanBadge v-if="hasPlanBadge" :upstream="account.upstream" :authentication-kind="account.authenticationKind" :plan-type="account.planType" :plan-type-display="account.planTypeDisplay" size="sm" class="shrink-0" />
         <template v-if="showUpstreamStatus || lastRefreshed">
-          <span class="shrink-0">·</span>
+          <span v-if="hasPlanBadge" class="shrink-0">·</span>
           <AccountUpstreamStatus v-if="showUpstreamStatus && account.upstream" :upstream="account.upstream" />
           <span v-else-if="lastRefreshed" class="min-w-0 truncate" :title="lastRefreshed">{{ lastRefreshed }}</span>
         </template>

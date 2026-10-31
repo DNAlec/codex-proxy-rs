@@ -25,7 +25,6 @@
       "reset": "Reset:",
       "remainingQuota": "Remaining {label} quota",
       "accountLimit": "Account limit",
-      "quota": "{provider}",
       "lastRefreshed": "Last refreshed: {refreshedAtDisplay}",
       "viewPersonalInformation": "View personal information",
       "forecastWeeklyMonthlyQuota": "Forecast weekly/monthly quota",

@@ -92,8 +92,9 @@ impl ProviderCredentials {
             .map_err(|error| map_store_error(error, "provider credential import"))?;
         drop(proxy_reservation);
         publish_credentials_and_observe_quota(
-            self.upstream_info.as_deref(),
+            self.upstream_info.as_ref(),
             &self.provider,
+            &self.accounts,
             self.snapshot.as_ref(),
             result.config_revision,
             &result.credential_ids,
@@ -249,8 +250,9 @@ impl super::CredentialsService {
         let result = outcome.result;
         if outcome.newly_committed {
             publish_credentials_and_observe_quota(
-                self.upstream_info.as_deref(),
+                self.upstream_info.as_ref(),
                 provider,
+                &self.accounts,
                 self.snapshot.as_ref(),
                 result.config_revision,
                 std::slice::from_ref(&result.account_id),

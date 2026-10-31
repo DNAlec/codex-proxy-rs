@@ -173,8 +173,9 @@ impl PluginAccountAccess for DefaultPluginAccountAccess {
                 .credential
                 .credential_revision;
                 publish_credentials_and_observe_quota(
-                    self.upstream_info.as_deref(),
+                    self.upstream_info.as_ref(),
                     &provider,
+                    &self.accounts,
                     self.snapshot.as_ref(),
                     result.config_revision,
                     std::slice::from_ref(&account_id),
@@ -217,8 +218,9 @@ impl PluginAccountAccess for DefaultPluginAccountAccess {
                     .credential_revision
                     .ok_or_else(|| AdminError::internal("账号保存未返回凭据版本"))?;
                 publish_credentials_and_observe_quota(
-                    self.upstream_info.as_deref(),
+                    self.upstream_info.as_ref(),
                     &provider,
+                    &self.accounts,
                     self.snapshot.as_ref(),
                     result.config_revision,
                     std::slice::from_ref(&result.account_id),

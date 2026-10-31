@@ -279,6 +279,10 @@ impl FakeProviderAdmin {
 
 #[async_trait]
 impl ProviderAdmin for FakeProviderAdmin {
+    fn peer_authentication_kinds(&self) -> &[&str] {
+        &["api_key"]
+    }
+
     fn account_capabilities(
         &self,
         _account_id: &ProviderAccountId,

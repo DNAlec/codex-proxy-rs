@@ -33,21 +33,22 @@ async fn discovery_uses_provider_capabilities_and_publishes_neutral_signals() {
         });
         let registry = ProviderAdminRegistry::new(providers).unwrap();
         let accounts = Arc::new(TestAccounts {
-            accounts: vec![
+            accounts: Mutex::new(vec![
                 account("acct_first", "openai", "peer_test"),
                 account("acct_second", "xai", "peer_test"),
                 account("acct_native", "xai", "oauth"),
-            ],
+            ]),
             records: Mutex::default(),
             failed_provider,
         });
         let transport = Arc::new(TestTransport(Mutex::new(Vec::new())));
         let mut bundle =
             initialize_peer_upstream(accounts.clone(), &registry, transport.clone()).unwrap();
+        let initial_accounts = accounts.accounts.lock().unwrap().clone();
         let reader = UpstreamInfoReader::default();
         assert!(
             reader
-                .signal(&accounts.accounts[0], "model", SystemTime::now())
+                .signal(&initial_accounts[0], "model", SystemTime::now())
                 .is_none()
         );
         let source = bundle.scheduling_source();
@@ -77,7 +78,7 @@ async fn discovery_uses_provider_capabilities_and_publishes_neutral_signals() {
                 vec!["acct_first", "acct_second"]
             }
         );
-        for account in &accounts.accounts[..2] {
+        for account in &initial_accounts[..2] {
             if Some(account.provider().as_str()) == failed_provider {
                 assert!(reader.signal(account, "model", SystemTime::now()).is_none());
                 continue;
@@ -101,17 +102,63 @@ async fn discovery_uses_provider_capabilities_and_publishes_neutral_signals() {
         }
         assert!(
             reader
-                .signal(&accounts.accounts[2], "model", SystemTime::now())
+                .signal(&initial_accounts[2], "model", SystemTime::now())
                 .is_none()
         );
         drop(worker);
         drop(bundle);
         assert!(
             reader
-                .signal(&accounts.accounts[0], "model", SystemTime::now())
+                .signal(&initial_accounts[0], "model", SystemTime::now())
                 .is_none()
         );
     }
+}
+
+#[tokio::test]
+async fn account_edits_preserve_observation_and_refresh_budget_until_connection_changes() {
+    let mut provider = UnavailableProvider::new("openai");
+    provider.peer_enabled = true;
+    let registry =
+        ProviderAdminRegistry::new([Arc::new(provider) as Arc<dyn ProviderAdmin>]).unwrap();
+    let initial = account("acct_peer", "openai", "peer_test");
+    let accounts = Arc::new(TestAccounts {
+        accounts: Mutex::new(vec![initial.clone()]),
+        records: Mutex::default(),
+        failed_provider: None,
+    });
+    let transport = Arc::new(TestTransport(Mutex::new(Vec::new())));
+    let bundle = initialize_peer_upstream(accounts.clone(), &registry, transport.clone()).unwrap();
+    let service = bundle.service();
+    service.refresh_quota(initial.id()).await.unwrap();
+    let before = service.read_summary(initial.id()).await.unwrap().unwrap();
+
+    let edited = initial.clone().with_notes(Some("仅修改备注".into()));
+    *accounts.accounts.lock().unwrap() = vec![edited.clone()];
+    service.account_changed(edited.id()).await.unwrap();
+    assert!(
+        bundle
+            .scheduling_source()
+            .signal(&edited, "model", SystemTime::now())
+            .is_some()
+    );
+    let after = service.refresh_quota(edited.id()).await.unwrap();
+    assert_eq!(after.upstream, before.upstream);
+    assert_eq!(transport.0.lock().unwrap().len(), 1);
+
+    let reconnected = edited.with_outbound_proxy(Some(
+        OutboundProxy::parse("http://proxy.invalid:8080").unwrap(),
+    ));
+    *accounts.accounts.lock().unwrap() = vec![reconnected.clone()];
+    service.account_changed(reconnected.id()).await.unwrap();
+    assert!(
+        bundle
+            .scheduling_source()
+            .signal(&reconnected, "model", SystemTime::now())
+            .is_none()
+    );
+    service.refresh_quota(reconnected.id()).await.unwrap();
+    assert_eq!(transport.0.lock().unwrap().len(), 2);
 }
 
 fn account(id: &str, provider: &str, authentication: &str) -> ProviderAccount {
@@ -165,7 +212,7 @@ impl PeerTransport for TestTransport {
 }
 
 struct TestAccounts {
-    accounts: Vec<ProviderAccount>,
+    accounts: Mutex<Vec<ProviderAccount>>,
     records: Mutex<BTreeMap<ProviderAccountId, QuotaObservation>>,
     failed_provider: Option<&'static str>,
 }
@@ -188,6 +235,8 @@ impl ProviderAccountStore for TestAccounts {
     ) -> Result<Option<ProviderAccount>, StoreError> {
         Ok(self
             .accounts
+            .lock()
+            .unwrap()
             .iter()
             .find(|account| account.id() == account_id)
             .cloned())
@@ -204,6 +253,8 @@ impl ProviderAccountStore for TestAccounts {
         }
         Ok(self
             .accounts
+            .lock()
+            .unwrap()
             .iter()
             .filter(|account| account.provider() == provider)
             .cloned()
@@ -227,6 +278,8 @@ impl ProviderAccountStore for TestAccounts {
         id: &ProviderAccountId,
     ) -> Result<LoadedCredential, StoreError> {
         self.accounts
+            .lock()
+            .unwrap()
             .iter()
             .find(|account| account.id() == id)
             .map(loaded)

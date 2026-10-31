@@ -112,6 +112,7 @@ pub(super) struct AdminHarness {
     plugin_store: Arc<dyn gateway_admin::ports::plugins::PluginStore>,
     plugin_inspector: Arc<dyn gateway_admin::ports::plugins::PluginPackageInspector>,
     client_key_verifier: Arc<dyn ClientKeyVerifier>,
+    upstream_info: Option<Arc<dyn gateway_admin::ports::peer::PeerUpstreamService>>,
     service_middleware: gateway_admin::public_service::PlanSource,
 }
 
@@ -142,6 +143,7 @@ impl AdminHarness {
             plugin_store: Arc::new(plugins::TestPluginPorts),
             plugin_inspector: Arc::new(plugins::TestPluginPorts),
             client_key_verifier: Arc::new(UnavailableClientKeyVerifier),
+            upstream_info: None,
             service_middleware: Arc::new(|| None),
         }
     }
@@ -158,6 +160,14 @@ impl AdminHarness {
 
     pub(super) fn accounts(mut self, store: Arc<dyn AccountStore>) -> Self {
         self.accounts = store;
+        self
+    }
+
+    pub(super) fn upstream_info(
+        mut self,
+        peer: Arc<dyn gateway_admin::ports::peer::PeerUpstreamService>,
+    ) -> Self {
+        self.upstream_info = Some(peer);
         self
     }
 
@@ -287,7 +297,7 @@ impl AdminHarness {
                 Arc::new(plugins::TestPluginPorts),
             ),
             gateway_admin::AdminRuntimePorts {
-                upstream_info: None,
+                upstream_info: self.upstream_info,
                 timezone: Default::default(),
                 service_middleware: self.service_middleware,
                 plugin_preparation: Arc::new(plugins::TestPluginPorts),

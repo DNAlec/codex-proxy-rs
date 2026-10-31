@@ -25,7 +25,6 @@
       "reset": "重置：",
       "remainingQuota": "{label}剩余额度",
       "accountLimit": "账号额度",
-      "quota": "{provider} 额度",
       "lastRefreshed": "最近刷新: {refreshedAtDisplay}",
       "viewPersonalInformation": "查看个人信息",
       "forecastWeeklyMonthlyQuota": "预测周/月额度",
