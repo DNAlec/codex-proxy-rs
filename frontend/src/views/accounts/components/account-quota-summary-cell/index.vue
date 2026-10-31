@@ -37,7 +37,7 @@ const additionalEntryCount = computed(() => Math.max(summaryEntries.value.length
 
 <template>
   <div class="box-border grid min-h-16.5 w-full min-w-0 content-center gap-1.5 py-1.5">
-    <template v-if="account.authenticationKind === 'api_key'">
+    <template v-if="account.authenticationKind === 'api_key' && summaryEntries.length === 0">
       <span
         class="flex min-w-0 items-baseline gap-1 font-mono leading-none tabular-nums"
         :title="t('accounts.quota.localTokens')"
@@ -55,10 +55,11 @@ const additionalEntryCount = computed(() => Math.max(summaryEntries.value.length
     </template>
     <template v-else-if="summaryEntries.length > 0">
       <div
-        v-if="hasUsage"
+        v-if="hasUsage || currentUsageWindow"
         class="flex min-w-0 items-baseline justify-between gap-2 leading-none"
       >
         <span
+          v-if="hasUsage"
           class="flex min-w-0 items-baseline gap-1 font-mono tabular-nums"
           :title="t('accounts.quota.totalTokensFor', { windowLabelDisplay: usageWindowLabels[account.usage.windowKind] })"
         >
@@ -71,7 +72,7 @@ const additionalEntryCount = computed(() => Math.max(summaryEntries.value.length
         </span>
         <span
           v-if="currentUsageWindow"
-          class="flex shrink-0 items-baseline gap-1 text-[9px] font-emphasis text-cp-text-quaternary"
+          class="ml-auto flex shrink-0 items-baseline gap-1 text-[9px] font-emphasis text-cp-text-quaternary"
           :title="t('accounts.quota.usageRateHelp')"
         >
           <span>{{ t('accounts.quota.usageRate') }}</span>

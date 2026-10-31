@@ -1559,6 +1559,7 @@ fn diagnostic(name: &str, request_count: u64) -> DiagnosticObservation {
         retry_count: 0,
         retried_request_count: 0,
         account_provider_kind: None,
+        account_authentication_kind: None,
         account_plan_type: None,
         key: name.to_owned(),
         name: name.to_owned(),

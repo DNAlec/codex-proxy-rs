@@ -965,6 +965,7 @@ pub struct DiagnosticObservation {
     pub key: String,
     pub name: String,
     pub account_provider_kind: Option<String>,
+    pub account_authentication_kind: Option<String>,
     pub account_plan_type: Option<String>,
     pub request_count: u64,
     pub success_count: u64,
@@ -1435,6 +1436,7 @@ pub struct UsageInsight {
 pub struct DiagnosticsItem {
     pub key: String,
     pub name: String,
+    pub account_authentication_kind: Option<String>,
     pub account_plan_type: Option<String>,
     pub account_plan_type_display: Option<String>,
     pub request_count: u64,
