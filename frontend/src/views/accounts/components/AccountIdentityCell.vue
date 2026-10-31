@@ -44,8 +44,8 @@ const initial = computed(() => displayTitle.value.slice(0, 1).toUpperCase())
 
 const avatarSizeClass = computed(() =>
   props.size === 'lg'
-    ? 'size-10 text-cp-xl'
-    : 'size-9 text-cp',
+    ? 'size-10 text-z-xl'
+    : 'size-9 text-z',
 )
 
 const metaGapClass = computed(() => props.metaSize === 'xs'
@@ -68,7 +68,7 @@ const avatarToneClass = computed(() => {
     </span>
     <div class="min-w-0 flex-1">
       <div class="flex min-w-0 items-center gap-2">
-        <span class="min-w-0 truncate text-cp font-heavy text-cp-text" :title="identityTitle">
+        <span class="min-w-0 truncate text-z font-heavy text-z-text" :title="identityTitle">
           {{ displayTitle }}
         </span>
         <span

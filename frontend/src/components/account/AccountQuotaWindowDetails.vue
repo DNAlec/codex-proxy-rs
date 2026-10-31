@@ -65,9 +65,9 @@ function quotaWindowCode(windowSeconds: number | null, role: AccountQuotaWindow[
 </script>
 
 <template>
-  <section class="w-84 max-w-[calc(100vw-2rem)] overflow-hidden rounded-cp-lg" role="dialog" :aria-label="t('accounts.quota.details', { detailTitle })">
-    <header v-if="detailHeading" class="bg-cp-popover-header-bg px-3 py-2.5">
-      <h3 class="m-0 truncate text-cp leading-5 font-heavy text-cp-text">
+  <section class="w-84 max-w-[calc(100vw-2rem)] overflow-hidden rounded-z-lg" role="dialog" :aria-label="t('accounts.quota.details', { detailTitle })">
+    <header v-if="detailHeading" class="bg-z-popover-header-bg px-3 py-2.5">
+      <h3 class="m-0 truncate text-z leading-5 font-heavy text-z-text">
         {{ detailHeading }}
       </h3>
     </header>
@@ -77,16 +77,16 @@ function quotaWindowCode(windowSeconds: number | null, role: AccountQuotaWindow[
       <article v-for="item in detailItems" :key="item.key">
         <div class="grid grid-cols-[32px_minmax(0,1fr)_auto] items-center gap-2.5">
           <span
-            class="grid h-5 w-8 place-items-center rounded-sm bg-cp-blue-container-strong font-mono text-[9px] leading-none font-heavy tracking-[0.04em] whitespace-nowrap text-cp-blue-on-container"
+            class="grid h-5 w-8 place-items-center rounded-sm bg-z-blue-container-strong font-mono text-[9px] leading-none font-heavy tracking-[0.04em] whitespace-nowrap text-z-blue-on-container"
           >
             {{ item.code }}
           </span>
-          <h4 class="m-0 min-w-0 truncate text-cp-sm leading-4 font-heavy text-cp-text-secondary">
+          <h4 class="m-0 min-w-0 truncate text-z-sm leading-4 font-heavy text-z-text-secondary">
             {{ item.local ? item.localLabel : item.label }}
           </h4>
           <strong
-            class="font-mono text-cp-xs leading-none font-heavy tabular-nums"
-            :class="item.local ? 'text-cp-text' : item.percentTextClass"
+            class="font-mono text-z-xs leading-none font-heavy tabular-nums"
+            :class="item.local ? 'text-z-text' : item.percentTextClass"
           >
             {{ item.local ? t('accounts.quota.requestCount', { requestDisplay: item.requestDisplay }) : item.quotaValueDisplay }}
           </strong>
@@ -100,7 +100,7 @@ function quotaWindowCode(windowSeconds: number | null, role: AccountQuotaWindow[
         />
         <template v-else>
           <div
-            class="mt-2 h-1 w-full overflow-hidden rounded-full bg-cp-border-secondary"
+            class="mt-2 h-1 w-full overflow-hidden rounded-full bg-z-border-secondary"
             role="progressbar"
             :aria-label="item.label"
             aria-valuemin="0"
@@ -116,38 +116,38 @@ function quotaWindowCode(windowSeconds: number | null, role: AccountQuotaWindow[
           </div>
         </template>
 
-        <p v-if="item.observationDisplay" class="mt-2 text-[10px] leading-4 text-cp-text-tertiary">
+        <p v-if="item.observationDisplay" class="mt-2 text-[10px] leading-4 text-z-text-tertiary">
           {{ item.observationDisplay }}
         </p>
 
         <dl class="mt-2.5 grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-1.5 text-[10px] leading-4">
           <template v-if="item.local">
-            <dt class="font-emphasis text-cp-text-tertiary">
+            <dt class="font-emphasis text-z-text-tertiary">
               {{ t('accounts.quota.statisticalMethod') }}
             </dt>
-            <dd class="m-0 text-right font-mono font-heavy tabular-nums text-cp-text">
+            <dd class="m-0 text-right font-mono font-heavy tabular-nums text-z-text">
               {{ t('accounts.quota.rollingWindow') }}
             </dd>
-            <dt class="font-emphasis text-cp-text-tertiary">
+            <dt class="font-emphasis text-z-text-tertiary">
               {{ t('accounts.quota.statisticalRange') }}
             </dt>
-            <dd class="m-0 truncate text-right font-mono font-emphasis tabular-nums text-cp-text-secondary">
+            <dd class="m-0 truncate text-right font-mono font-emphasis tabular-nums text-z-text-secondary">
               {{ item.durationDisplay }}
             </dd>
           </template>
           <template v-else>
             <template v-if="showConsumption && item.consumptionDisplay">
-              <dt class="font-emphasis text-cp-text-tertiary">
+              <dt class="font-emphasis text-z-text-tertiary">
                 {{ t('accounts.quota.windowConsumption') }}
               </dt>
-              <dd class="m-0 text-right font-mono font-heavy tabular-nums text-cp-text">
+              <dd class="m-0 text-right font-mono font-heavy tabular-nums text-z-text">
                 {{ item.consumptionDisplay }}
               </dd>
             </template>
-            <dt class="font-emphasis text-cp-text-tertiary">
+            <dt class="font-emphasis text-z-text-tertiary">
               {{ t('accounts.quota.resetTime') }}
             </dt>
-            <dd class="m-0 truncate text-right font-mono font-emphasis tabular-nums text-cp-text-secondary">
+            <dd class="m-0 truncate text-right font-mono font-emphasis tabular-nums text-z-text-secondary">
               {{ item.resetAtDisplay }}
             </dd>
           </template>

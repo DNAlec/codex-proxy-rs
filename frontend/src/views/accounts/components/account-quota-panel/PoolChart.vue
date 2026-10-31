@@ -43,10 +43,10 @@ const { start: scheduleOpen, stop: cancelOpen } = useTimeoutFn(() => {
 
 const option = computed<EChartsOption>(() => {
   const colors = {
-    success: color('--cp-color-success', ''),
-    warning: color('--cp-color-warning', ''),
-    danger: color('--cp-color-error', ''),
-    unknown: color('--cp-color-border', ''),
+    success: color('color-success', ''),
+    warning: color('color-warning', ''),
+    danger: color('color-error', ''),
+    unknown: color('color-border', ''),
   }
   const nodes = props.nodes
   return {
@@ -264,7 +264,7 @@ onBeforeUnmount(() => chart?.off('datazoom', onDataZoom))
     <ZPopover ref="popover" v-model="open" class="w-full" placement="top" trigger="hover-click" :reference-element="anchor" :disabled="!activeNode?.windows.length" :hover-delay="180" animate-position>
       <template #reference>
         <div
-          class="relative w-full rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-cp-control-outline"
+          class="relative w-full rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-z-control-outline"
           role="slider" tabindex="0" :aria-valuemin="1" :aria-valuemax="nodes.length" :aria-valuenow="(activeIndex ?? 0) + 1" :aria-valuetext="t('accounts.upstream.account', { number: (activeIndex ?? 0) + 1 })" :aria-label="t('accounts.upstream.poolChart')" :aria-description="t('accounts.upstream.poolKeyboard')"
           @pointermove="onPointerMove" @pointerleave="onPointerLeave" @click="onChartClick" @dblclick="resetZoom" @keydown="onKeydown"
         >

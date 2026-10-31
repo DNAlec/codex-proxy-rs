@@ -6,9 +6,9 @@ import { useAsyncAction } from '@/composables/useAsyncAction'
 import { useRequestState } from '@/composables/useRequestState'
 import { t } from '@/i18n'
 import { notification as ZNotification } from '@/utils/notification'
-import { accountModelAccessError } from '../utils/modelAccess'
-import { concurrencyLimitInput, parseAccountSchedulingForm } from '../utils/schedulingForm'
-import { apiKeyAccountError, emptyApiKeyAccountForm, isOpenAiApiKeyAccount, isOpenAiOAuthAccount, parseApiKeyConfiguration } from '../utils/upstreamApiKey'
+import { accountNameUpdate } from '../utils/accountName'
+import { accountSchedulingValues, concurrencyLimitInput } from '../utils/schedulingForm'
+import { emptyApiKeyAccountForm, isOpenAiApiKeyAccount, isOpenAiOAuthAccount, parseApiKeyConfiguration } from '../utils/upstreamApiKey'
 
 export function useAccountEditor(options: {
   reloadAccounts: () => Promise<unknown>
@@ -89,52 +89,22 @@ export function useAccountEditor(options: {
   }
 
   async function save() {
-    const accountId = editingAccount.value?.id
-    if (!accountId || saving.value)
+    const account = editingAccount.value
+    if (!account || saving.value)
       return
-    if (new TextEncoder().encode(name.value).length > 512 || /\p{Cc}/u.test(name.value)) {
-      ZNotification.warning({
-        message: t('accounts.editor.nameInvalid'),
-      })
-      return
-    }
-    const isApiKey = isOpenAiApiKeyAccount(editingAccount.value)
-    const isOAuth = isOpenAiOAuthAccount(editingAccount.value)
+    const isApiKey = isOpenAiApiKeyAccount(account)
+    const isOAuth = isOpenAiOAuthAccount(account)
     const configuration = isApiKey && configurationReady.value
       ? parseApiKeyConfiguration(apiKey.value)
       : undefined
     if (isApiKey && !configuration)
       return
-    if (isApiKey) {
-      const error = apiKeyAccountError(apiKey.value, true)
-      if (error) {
-        ZNotification.warning({ message: error })
-        return
-      }
-    }
-    const modelError = accountModelAccessError(modelAccess.value)
-    if (modelError) {
-      ZNotification.warning({ message: modelError })
-      return
-    }
-    const scheduling = parseAccountSchedulingForm(concurrencyLimit.value, weight.value)
-    if (proxyMode.value === 'proxy' && !proxyId.value.trim()) {
-      ZNotification.warning({
-        message: t('accounts.batchEdit.proxyRequired'),
-      })
-      return
-    }
-    if (!scheduling.valid) {
-      ZNotification.warning({ message: scheduling.message })
-      return
-    }
+    const scheduling = accountSchedulingValues(concurrencyLimit.value, weight.value)
 
     await saveAction.run(async () => {
       const settings = {
-        accountId,
-        name: name.value.trim() === editingAccount.value?.name
-          ? undefined
-          : name.value.trim(),
+        accountId: account.id,
+        name: accountNameUpdate(name.value, account.name),
         notes: notes.value,
         outboundProxyId: proxyMode.value === 'preserve'
           ? undefined
@@ -142,8 +112,8 @@ export function useAccountEditor(options: {
             ? ''
             : proxyId.value.trim(),
         enabled: schedulingEnabled.value,
-        concurrencyLimit: scheduling.values.concurrencyLimit,
-        weight: scheduling.values.weight,
+        concurrencyLimit: scheduling.concurrencyLimit,
+        weight: scheduling.weight,
         modelAccess: modelAccess.value,
         groupIds: [
           ...new Set(selectedGroupIds.value),

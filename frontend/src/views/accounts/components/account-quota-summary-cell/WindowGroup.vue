@@ -32,7 +32,7 @@ const highestUsageWindow = computed(() => props.windows.reduce((highest, window)
 const highestUsageDisplay = computed(() => highestUsageWindow.value?.usedPercentDisplay ?? '—')
 const highestUsageTextClass = computed(() => highestUsageWindow.value
   ? quotaWindowPresentation(highestUsageWindow.value, '2px').percentTextClass
-  : 'text-cp-text-quaternary')
+  : 'text-z-text-quaternary')
 
 const trackGridStyle = computed(() => ({
   gridTemplateColumns: `repeat(${Math.max(windowItems.value.length, 1)}, minmax(0, 1fr))`,
@@ -42,7 +42,7 @@ const trackGridStyle = computed(() => ({
 <template>
   <div class="col-span-full grid min-w-0 grid-cols-subgrid gap-y-1.5">
     <div class="col-span-full grid min-w-0 grid-cols-subgrid items-baseline text-[10px] leading-3 font-bold">
-      <span class="min-w-0 truncate text-cp-text-quaternary">
+      <span class="min-w-0 truncate text-z-text-quaternary">
         {{ label }}
       </span>
       <strong
@@ -58,7 +58,7 @@ const trackGridStyle = computed(() => ({
       <div
         v-for="item in windowItems"
         :key="item.key"
-        class="h-1 w-full overflow-hidden rounded-full bg-cp-border-secondary"
+        class="h-1 w-full overflow-hidden rounded-full bg-z-border-secondary"
         role="progressbar"
         :aria-label="item.labelTooltip"
         aria-valuemin="0"

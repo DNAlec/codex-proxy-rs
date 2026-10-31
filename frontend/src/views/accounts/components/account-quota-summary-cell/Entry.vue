@@ -36,7 +36,7 @@ const hasQuotaWindow = computed(() => props.windows.some(window => typeof window
     <template #reference="{ open }">
       <button
         type="button"
-        class="col-span-full grid w-full min-w-0 grid-cols-subgrid cursor-pointer rounded-sm border-0 bg-transparent p-0 text-left outline-none focus-visible:ring-2 focus-visible:ring-cp-control-outline"
+        class="col-span-full grid w-full min-w-0 grid-cols-subgrid cursor-pointer rounded-sm border-0 bg-transparent p-0 text-left outline-none focus-visible:ring-2 focus-visible:ring-z-control-outline"
         :aria-label="t('accounts.quota.viewDetails', { detailTitle })"
         :aria-expanded="open"
         aria-haspopup="dialog"

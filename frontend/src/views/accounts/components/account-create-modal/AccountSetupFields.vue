@@ -11,7 +11,6 @@ defineProps<{
   groups: AccountGroupRef[]
   groupsLoading: boolean
   disabled: boolean
-  proxyError?: string
 }>()
 
 const { t } = useI18n({ useScope: 'global' })
@@ -22,7 +21,7 @@ const form = defineModel<AccountCreateForm>({ required: true })
 <template>
   <div class="grid gap-6">
     <fieldset class="m-0 min-w-0 border-0 p-0">
-      <legend class="mb-3 p-0 text-cp font-medium text-cp-text-secondary">
+      <legend class="mb-3 p-0 text-z font-medium text-z-text-secondary">
         {{ t('accounts.onboarding.accountPlatform') }}
       </legend>
       <AccountProviderChooser v-model="form.source" :disabled="disabled" />
@@ -36,11 +35,11 @@ const form = defineModel<AccountCreateForm>({ required: true })
       v-model:proxy-mode="form.proxyMode"
       v-model:proxy-id="form.proxyId"
       preserve-model-access
+
       :groups="groups"
       :groups-loading="groupsLoading"
       :preserve-proxy="false"
       :disabled="disabled"
-      :proxy-error="proxyError"
     />
     <ZFormItem :label="t('common.fields.notes')">
       <ZTextarea

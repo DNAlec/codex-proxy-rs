@@ -80,7 +80,7 @@ function handleRetentionKeydown(event: KeyboardEvent) {
               <CircleAlert class="size-4" />
             </ZIconButton>
           </template>
-          <div :id="retentionId" role="tooltip" class="grid w-72 max-w-[calc(100vw-2rem)] gap-2 p-4 text-cp-xs leading-relaxed text-cp-text-secondary">
+          <div :id="retentionId" role="tooltip" class="grid w-72 max-w-[calc(100vw-2rem)] gap-2 p-4 text-z-xs leading-relaxed text-z-text-secondary">
             <p class="m-0">
               {{ t('accounts.importTasks.resultsRetainedForHour') }}
             </p>

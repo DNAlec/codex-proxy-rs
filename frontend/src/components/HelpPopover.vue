@@ -12,7 +12,7 @@ defineProps<{ label: string, content: string }>()
         <CircleAlert class="size-3.5" aria-hidden="true" />
       </ZIconButton>
     </template>
-    <section role="dialog" :aria-label="label" class="max-w-72 p-3 text-cp-xs leading-relaxed text-cp-text-secondary">
+    <section role="dialog" :aria-label="label" class="max-w-72 p-3 text-z-xs leading-relaxed text-z-text-secondary">
       {{ content }}
     </section>
   </ZPopover>

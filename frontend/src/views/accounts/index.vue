@@ -99,7 +99,6 @@ const {
   togglingSchedulingAccountIds,
   deletingAccount,
   creatingAccount,
-  authorizingOAuth,
   authorization,
   authorizationCallback,
   batchDeleting,
@@ -171,6 +170,7 @@ const {
   concurrencyLimit: batchConcurrencyLimit,
   weight: batchWeight,
   modelAccess: batchModelAccess,
+  editedFields: batchEditedFields,
   catalogAccountId: batchCatalogAccountId,
   editingCount: batchEditingCount,
   proxyMode: batchProxyMode,
@@ -257,7 +257,7 @@ const {
       <template #body>
         <div class="flex min-h-0 flex-col xl:h-full">
           <ZTable
-            class="h-100! min-h-100 flex-none [--cp-table-row-height:72px] xl:h-auto! xl:min-h-0 xl:flex-1"
+            class="h-100! min-h-100 flex-none [--z-table-row-height:72px] xl:h-auto! xl:min-h-0 xl:flex-1"
             :columns="visibleColumns"
             :data="accounts"
             :loading="loading"
@@ -270,7 +270,7 @@ const {
             <template #expander="{ row }">
               <button
                 type="button"
-                class="inline-flex size-6 cursor-pointer items-center justify-center rounded-md border-0 bg-transparent text-cp-text-secondary transition hover:bg-cp-bg-text-hover hover:text-cp-text"
+                class="inline-flex size-6 cursor-pointer items-center justify-center rounded-md border-0 bg-transparent text-z-text-secondary transition hover:bg-z-bg-text-hover hover:text-z-text"
                 :title="expandedAccountIds.has(row.id) ? t('accounts.page.collapseStatistics') : t('accounts.page.expandStatistics')"
                 @click.stop="toggleExpanded(row.id)"
               >
@@ -429,7 +429,6 @@ const {
       :account="reauthorizingAccount"
       :groups="groups"
       :groups-loading="groupsLoading"
-      :oauth-loading="authorizingOAuth"
       :reauthorizing="Boolean(reauthorizingAccount)"
       :saving="creatingAccount"
       @create="handleCreate"
@@ -469,6 +468,7 @@ const {
       v-model:proxy-id="batchProxyId"
       v-model:selected-group-ids="batchGroupIds"
       :catalog-account-id="batchCatalogAccountId"
+      :edited-fields="batchEditedFields"
       :selected-count="batchEditingCount"
       :groups="groups"
       :groups-loading="groupsLoading"

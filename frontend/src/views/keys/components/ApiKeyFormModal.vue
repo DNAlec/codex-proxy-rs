@@ -65,11 +65,11 @@ function updatePeerSharing(key: keyof ApiKeyPeerSharing, value: boolean) {
     @closed="emit('afterLeave')"
   >
     <template #icon>
-      <KeyRound class="text-cp-text" :size="20" aria-hidden="true" />
+      <KeyRound class="text-z-text" :size="20" aria-hidden="true" />
     </template>
 
     <ZForm ref="formElement" :model="form" :rules="rules" scroll-to-error focus-on-error novalidate class="grid gap-6" @submit="requestSave">
-      <ZFormItem prop="name" :label="t('common.fields.name')">
+      <ZFormItem prop="name" :label="t('common.fields.name')" :show-message="false">
         <ZInput
           :model-value="form.name" :aria-label="t('common.fields.name')"
           :placeholder="t('keys.editor.namePlaceholder')"

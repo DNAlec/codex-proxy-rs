@@ -50,7 +50,7 @@ const summaryValue = computed(() => {
 })
 const currentUsageTextClass = computed(() => currentUsageWindow.value
   ? quotaWindowPresentation(currentUsageWindow.value, '2px').percentTextClass
-  : 'text-cp-text-quaternary')
+  : 'text-z-text-quaternary')
 const additionalEntryCount = computed(() => Math.max(summaryEntries.value.length - 1, 0))
 </script>
 
@@ -65,16 +65,16 @@ const additionalEntryCount = computed(() => Math.max(summaryEntries.value.length
         class="flex min-w-0 items-baseline gap-1 font-mono tabular-nums"
         :title="summaryValue.title"
       >
-        <strong class="truncate text-cp-xs font-heavy text-cp-text">
+        <strong class="truncate text-z-xs font-heavy text-z-text">
           {{ summaryValue.value }}
         </strong>
-        <span class="shrink-0 text-[9px] font-emphasis tracking-[0.02em] text-cp-text-quaternary">
+        <span class="shrink-0 text-[9px] font-emphasis tracking-[0.02em] text-z-text-quaternary">
           {{ summaryValue.label }}
         </span>
       </span>
       <span
         v-if="currentUsageWindow"
-        class="ml-auto flex shrink-0 items-baseline gap-1 text-[9px] font-emphasis text-cp-text-quaternary"
+        class="ml-auto flex shrink-0 items-baseline gap-1 text-[9px] font-emphasis text-z-text-quaternary"
         :title="t('accounts.quota.usageRateHelp')"
       >
         <span>{{ t('accounts.quota.usageRate') }}</span>
@@ -100,7 +100,7 @@ const additionalEntryCount = computed(() => Math.max(summaryEntries.value.length
       </div>
       <span
         v-if="additionalEntryCount > 0"
-        class="grid h-5 min-w-5 shrink-0 place-items-center rounded-cp bg-cp-fill-quaternary px-1.5 font-mono text-[9px] font-heavy tabular-nums text-cp-text-tertiary"
+        class="grid h-5 min-w-5 shrink-0 place-items-center rounded-z bg-z-fill-quaternary px-1.5 font-mono text-[9px] font-heavy tabular-nums text-z-text-tertiary"
         :title="t('accounts.quota.moreGroups', { count: additionalEntryCount })"
       >
         +{{ additionalEntryCount }}

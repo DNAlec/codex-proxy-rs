@@ -1,19 +1,24 @@
 <script setup lang="ts">
+import type { FormRules } from '@codex-proxy/ui'
 import type { ApiKeyAccountForm } from '../utils/upstreamApiKey'
 
 import type { Account, AccountGroupRef, AccountModelAccess } from '@/api'
 
-import { ZButton, ZDialog, ZFormItem, ZInput, ZSegmented, ZTextarea } from '@codex-proxy/ui'
+import { ZButton, ZDialog, ZForm, ZFormItem, ZInput, ZSegmented, ZTextarea } from '@codex-proxy/ui'
 
+import { computed, useTemplateRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AccountPlanBadge from '@/components/account/AccountPlanBadge.vue'
 import ProviderIconGroup from '@/components/ProviderIconGroup.vue'
+import { useAccountApiKeyFormRules } from '../composables/useAccountApiKeyFormRules'
+import { useAccountSettingsFormRules } from '../composables/useAccountSettingsFormRules'
+import { accountNameUpdate } from '../utils/accountName'
 import { isOpenAiApiKeyAccount, isOpenAiOAuthAccount } from '../utils/upstreamApiKey'
 import AccountApiKeyFields from './AccountApiKeyFields.vue'
 import AccountIdentityCell from './AccountIdentityCell.vue'
 import AccountSettingsFields from './AccountSettingsFields.vue'
 
-defineProps<{
+const props = defineProps<{
   account: Account | null
   groups: AccountGroupRef[]
   groupsLoading: boolean
@@ -44,6 +49,41 @@ const weight = defineModel<string>('weight', { required: true })
 const proxyMode = defineModel<string>('proxyMode', { required: true })
 const proxyId = defineModel<string>('proxyId', { required: true })
 const selectedGroupIds = defineModel<string[]>('selectedGroupIds', { required: true })
+const formRef = useTemplateRef<InstanceType<typeof ZForm>>('formElement')
+const form = computed(() => ({
+  name: name.value,
+  apiKey: apiKey.value,
+  concurrencyLimit: concurrencyLimit.value,
+  weight: weight.value,
+  modelAccess: modelAccess.value,
+  proxyMode: proxyMode.value,
+  proxyId: proxyId.value,
+}))
+const settingsRules = useAccountSettingsFormRules(() => form.value)
+const apiKeyRules = useAccountApiKeyFormRules(true)
+const rules = computed<FormRules>(() => ({
+  ...settingsRules.value,
+  ...apiKeyRules.value,
+  name: {
+    trigger: ['blur', 'change'],
+    validator: () => {
+      const updatedName = accountNameUpdate(name.value, props.account?.name ?? '')
+      return updatedName === undefined
+        || (new TextEncoder().encode(updatedName).length <= 512 && !/\p{Cc}/u.test(updatedName))
+    },
+    message: t('accounts.editor.nameInvalid'),
+  },
+}))
+const saveDisabled = computed(() => !props.account || props.groupsLoading
+  || (isOpenAiApiKeyAccount(props.account) && !props.configurationReady))
+
+watch(open, () => formRef.value?.clearValidate())
+
+async function requestSave() {
+  if (props.saving || saveDisabled.value || !await formRef.value?.validate().catch(() => false))
+    return
+  emit('save')
+}
 </script>
 
 <template>
@@ -54,9 +94,9 @@ const selectedGroupIds = defineModel<string[]>('selectedGroupIds', { required: t
     :show-close="!saving" :close-on-click-modal="!saving" :close-on-press-escape="!saving"
     @closed="emit('afterLeave')"
   >
-    <div v-if="account" class="grid min-w-0 grid-cols-1 gap-5">
+    <ZForm v-if="account" ref="formElement" :model="form" :rules="rules" scroll-to-error focus-on-error novalidate @submit="requestSave">
       <div
-        class="flex flex-wrap items-center justify-between gap-4 rounded-cp bg-cp-fill-quaternary px-4 py-3.5"
+        class="flex flex-wrap items-center justify-between gap-4 rounded-z bg-z-fill-quaternary px-4 py-3.5"
       >
         <AccountIdentityCell
           class="min-w-0 flex-1"
@@ -96,7 +136,7 @@ const selectedGroupIds = defineModel<string[]>('selectedGroupIds', { required: t
         :account-id="account.id"
       />
 
-      <ZFormItem :label="t('accounts.credentials.accountName')">
+      <ZFormItem prop="name" :label="t('accounts.credentials.accountName')">
         <ZInput
           v-model="name"
           :aria-label="t('accounts.credentials.accountName')"
@@ -114,7 +154,7 @@ const selectedGroupIds = defineModel<string[]>('selectedGroupIds', { required: t
           :disabled="saving"
         />
       </ZFormItem>
-    </div>
+    </ZForm>
 
     <template #footer>
       <ZButton :disabled="saving" @click="open = false">
@@ -123,8 +163,8 @@ const selectedGroupIds = defineModel<string[]>('selectedGroupIds', { required: t
       <ZButton
         type="primary"
         :loading="saving"
-        :disabled="!account || groupsLoading || (isOpenAiApiKeyAccount(account) && !configurationReady)"
-        @click="emit('save')"
+        :disabled="saveDisabled"
+        @click="requestSave"
       >
         {{ t('common.actions.save') }}
       </ZButton>

@@ -28,8 +28,8 @@ const detail = computed(() => [
 
 <template>
   <span
-    class="min-w-0 truncate text-cp-xs font-emphasis"
-    :class="upstream.stale || upstream.lastError ? 'text-cp-warning-text' : 'text-cp-text-tertiary'"
+    class="min-w-0 truncate text-z-xs font-emphasis"
+    :class="upstream.stale || upstream.lastError ? 'text-z-warning-text' : 'text-z-text-tertiary'"
     :title="detail"
     role="status"
   >

@@ -6,9 +6,9 @@ import { t } from '@/i18n'
 import { notification as ZNotification } from '@/utils/notification'
 import { errorMessage, generateRequestId } from '@/utils/operation'
 import { formatProviderLabel, isSupportedProvider } from '@/utils/providers'
-import { accountCreateProvider, accountCreateSourceKey, accountImportModes, accountImportSettings, accountProxyError, emptyAccountCreateForm } from '../utils/accountCreate'
+import { accountCreateProvider, accountCreateSourceKey, accountImportModes, accountImportSettings, emptyAccountCreateForm } from '../utils/accountCreate'
 import { accountImportBatches, accountImportDocuments, mixedImportDocuments } from '../utils/accountImport'
-import { apiKeyAccountError, emptyApiKeyAccountForm } from '../utils/upstreamApiKey'
+import { emptyApiKeyAccountForm } from '../utils/upstreamApiKey'
 import { useAccountAuthorization } from './useAccountAuthorization'
 
 export function useAccountOnboarding(options: {
@@ -58,9 +58,6 @@ export function useAccountOnboarding(options: {
     let submitted = 0
     await creatingAccountAction.run(async () => {
       const form = createForm.value
-      const proxyError = accountProxyError(form)
-      if (proxyError)
-        throw new Error(proxyError)
       const settings = accountImportSettings(form)
       const outboundProxyId = form.proxyMode === 'proxy'
         ? form.proxyId.trim()
@@ -72,9 +69,6 @@ export function useAccountOnboarding(options: {
       if (mode === 'api_key') {
         if (requireImportProvider(provider) !== 'openai')
           throw new Error(t('accounts.onboarding.apiKeyUnsupported'))
-        const error = apiKeyAccountError(form.apiKey)
-        if (error)
-          throw new Error(error)
         await importAccounts({
           provider: 'openai',
           settings,
@@ -137,9 +131,6 @@ export function useAccountOnboarding(options: {
       if (!isSupportedProvider(provider))
         throw new Error(t('accounts.onboarding.accountPlatformIsNotSupported'))
       const account = reauthorizingAccount.value
-      const proxyError = accountProxyError(form)
-      if (proxyError)
-        throw new Error(proxyError)
       await authorization.start({
         start: {
           provider,
@@ -221,7 +212,6 @@ export function useAccountOnboarding(options: {
     showCreateModal,
     reauthorizingAccount,
     creatingAccount: creatingAccountAction.loading,
-    authorizingOAuth: authorization.busy,
     authorization: authorization.view,
     authorizationCallback: authorization.callback,
     createForm,

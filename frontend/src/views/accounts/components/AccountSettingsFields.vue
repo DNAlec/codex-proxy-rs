@@ -17,7 +17,6 @@ withDefaults(defineProps<{
   preserveProxy?: boolean
   preserveModelAccess?: boolean
   showScheduling?: boolean
-  proxyError?: string
 }>(), { preserveProxy: true, showScheduling: true })
 
 const { t } = useI18n({ useScope: 'global' })
@@ -32,11 +31,11 @@ const selectedGroupIds = defineModel<string[]>('selectedGroupIds', { required: t
 </script>
 
 <template>
-  <div class="grid gap-5">
-    <AccountModelAccessField v-model="modelAccess" :account-id="accountId" :disabled="disabled" :allow-preserve="preserveModelAccess" />
+  <div class="grid gap-4.5">
+    <AccountModelAccessField v-model="modelAccess" form-prop="modelAccess" :account-id="accountId" :disabled="disabled" :allow-preserve="preserveModelAccess" />
     <slot name="scheduling">
       <div v-if="showScheduling" class="flex min-h-6 items-center justify-between gap-3">
-        <span class="text-cp leading-none font-medium text-cp-text-secondary">{{ t('accounts.scheduling.scheduling') }}</span>
+        <span class="text-z leading-none font-medium text-z-text-secondary">{{ t('accounts.scheduling.scheduling') }}</span>
         <ZSwitch
           v-model="enabled"
           :aria-label="t('accounts.scheduling.switchAccountSchedule')"
@@ -45,8 +44,8 @@ const selectedGroupIds = defineModel<string[]>('selectedGroupIds', { required: t
       </div>
     </slot>
 
-    <div class="grid gap-4 sm:grid-cols-2">
-      <ZFormItem :label="t('accounts.scheduling.concurrencyLimit')">
+    <div class="grid gap-4.5 sm:grid-cols-2">
+      <ZFormItem prop="concurrencyLimit" :label="t('accounts.scheduling.concurrencyLimit')">
         <ZInput
           v-model="concurrencyLimit"
           :aria-label="t('accounts.scheduling.accountConcurrencyLimit')"
@@ -57,7 +56,7 @@ const selectedGroupIds = defineModel<string[]>('selectedGroupIds', { required: t
           :disabled="disabled"
         />
       </ZFormItem>
-      <ZFormItem :label="t('accounts.scheduling.weight')">
+      <ZFormItem prop="weight" :show-message="Boolean(weight.trim())" :label="t('accounts.scheduling.weight')">
         <ZInput
           v-model="weight"
           :aria-label="t('accounts.scheduling.accountSchedulingWeight')"
@@ -78,6 +77,6 @@ const selectedGroupIds = defineModel<string[]>('selectedGroupIds', { required: t
         :disabled="disabled"
       />
     </ZFormItem>
-    <AccountProxyField v-model:mode="proxyMode" v-model:proxy-id="proxyId" :preserve="preserveProxy" :error="proxyError" :current-proxy-id="currentProxyId" :endpoint="endpoint" :account-id="accountId" :disabled="disabled" />
+    <AccountProxyField v-model:mode="proxyMode" v-model:proxy-id="proxyId" form-prop="proxyId" :preserve="preserveProxy" :current-proxy-id="currentProxyId" :endpoint="endpoint" :account-id="accountId" :disabled="disabled" />
   </div>
 </template>

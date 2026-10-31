@@ -65,14 +65,14 @@ watch(hasPersonalInfo, (available) => {
 </script>
 
 <template>
-  <section class="flex min-h-0 min-w-0 flex-col rounded-lg bg-cp-bg-container p-4 shadow-cp-tertiary">
+  <section class="flex min-h-0 min-w-0 flex-col rounded-lg bg-z-bg-container p-4 shadow-z-tertiary">
     <div class="mb-3 grid shrink-0 grid-cols-[minmax(0,1fr)_auto] items-start gap-x-3 gap-y-1">
-      <h3 class="m-0 text-cp-lg font-heavy text-cp-text">
+      <h3 class="m-0 text-z-lg font-heavy text-z-text">
         {{ account.upstream?.discovered ? t('accounts.upstream.quota') : t('accounts.quota.accountLimit') }}
       </h3>
       <p
         v-if="account.capabilities.quota || quotaEntries.length > 0 || account.upstream?.discovered"
-        class="col-span-2 row-start-2 m-0 flex min-w-0 items-center gap-1.5 text-cp-xs font-emphasis text-cp-text-secondary"
+        class="col-span-2 row-start-2 m-0 flex min-w-0 items-center gap-1.5 text-z-xs font-emphasis text-z-text-secondary"
       >
         <span class="shrink-0 whitespace-nowrap">{{ t('accounts.quota.quota', { provider: formatProviderLabel(account.provider) }) }}</span>
         <template v-if="account.planType || account.authenticationKind === 'api_key'">

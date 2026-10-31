@@ -19,7 +19,9 @@ export function useApiKeyFormRules(form: () => ApiKeyFormValue) {
     return {
       trigger: ['blur', 'change'],
       type: 'integer',
-      transform: Number,
+      transform: value => String(value ?? '').trim()
+        ? Number(value)
+        : undefined,
       min: 0,
       max: Number.MAX_SAFE_INTEGER,
       message: t('keys.editor.validation.integer', { label }),
