@@ -1915,11 +1915,11 @@ UA、平台参数及自动 Git 上下文版本由 [OpenAI 上游客户端身份]
 
 ### 并发与排队
 
-`maxConcurrentPerAccount` 是默认账号并发上限，初始值为 5，取值 0～4294967295；`0` 表示不限制。
+`maxConcurrentPerAccount` 是默认账号并发上限，初始值为 3，取值 0～4294967295；`0` 表示不限制。
 账号的 `concurrencyLimit: null` 继承该默认值，单独设置的正数上限仍优先生效。
 无限并发仍统计在途请求，并遵守账号可用性与 Client Key 限制
 
-`maxWaitingPerKey` 与 `maxWaitingPerAccount` 是全局统一的普通排队容量，取值 0～1,000，默认 0（关闭）；
+`maxWaitingPerKey` 与 `maxWaitingPerAccount` 是全局统一的普通排队容量，取值 0～1,000，默认 10，`0` 表示关闭；
 每个 Key、每个账号各自独立计数，没有单对象覆盖字段。执行并发为 5、最大排队数为 5 时，
 该对象最多容纳 5 个执行请求与 5 个等待请求。Key 并发为 0（不限）时跳过 Key 排队。
 OpenAI 严格亲和下后代线程的会话账号等待不随普通账号排队关闭，见 [Client Key 等待规则](#7-client-key)。
@@ -1927,7 +1927,7 @@ OpenAI 严格亲和下后代线程的会话账号等待不随普通账号排队�
 切换账号或内部重试不重新计时；若插件设置了请求总时限，等待也计入该时限。排队超时不用于中断已开始的上游生成。
 设置更新请求须包含这三个字段，新请求使用更新后的快照
 
-`openaiGuardianReservedConcurrency`（默认 0，取值 0～4,294,967,295）设置 Codex Guardian 自动审批的每账号独立并发，保存后对新请求生效。
+`openaiGuardianReservedConcurrency`（默认 5，取值 0～4,294,967,295）设置 Codex Guardian 自动审批的每账号独立并发，保存后对新请求生效。
 Guardian 以 `subagent_kind` 或 `client_metadata.x-openai-subagent` 值 `guardian` 识别。取值 R 大于 0 时，
 普通请求保留账号原上限 L，Guardian 单独计数并最多运行 R 个，两类请求互不占用名额，也不借用对方空位。
 例如 L 为 10、R 为 3 时，可以同时运行 10 个普通请求和 3 个审批请求；普通并发不限时，审批仍受 R 限制。
