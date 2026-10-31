@@ -620,7 +620,6 @@
       "link": "CPR 互联",
       "observedAt": "{time}更新",
       "stale": "数据已过期",
-      "accepted": "查询尚未完成，稍后刷新可查看结果",
       "unauthorized": "上游未授权",
       "unsupported": "上游暂不支持互联",
       "rateLimited": "上游查询受限",

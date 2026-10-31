@@ -91,7 +91,6 @@ impl Providers {
             .map_err(|_| gateway_admin::model::AdminError::invalid("Provider 管理身份冲突"))?;
         let peer = gateway_admin::initialize_peer_upstream(
             environment.store.provider_ports().accounts(),
-            environment.store.upstream_info(),
             &admin,
             Arc::new(gateway_host::peer::HttpPeerTransport::with_client_builder(
                 provider_openai::build_reqwest_client_with_custom_ca,

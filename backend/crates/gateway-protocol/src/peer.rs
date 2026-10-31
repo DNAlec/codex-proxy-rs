@@ -14,7 +14,6 @@ pub const MAX_RESPONSE_BYTES: usize = 4 * 1024 * 1024;
 pub struct PeerLink {
     pub object: String,
     pub schema_version: u32,
-    pub node: PeerNode,
     pub capabilities: Vec<String>,
     pub observed_at: String,
     pub expires_at: String,
@@ -24,13 +23,6 @@ pub struct PeerLink {
     pub quota: PeerQuota,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub models: Vec<PeerModelAvailability>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct PeerNode {
-    pub id: String,
-    pub name: String,
-    pub software: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

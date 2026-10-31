@@ -20,7 +20,7 @@ use gateway_core::{
 use std::{
     collections::BTreeMap,
     sync::{Arc, Mutex},
-    time::{Duration, SystemTime},
+    time::SystemTime,
 };
 
 #[tokio::test]
@@ -32,24 +32,22 @@ async fn discovery_uses_provider_capabilities_and_publishes_neutral_signals() {
             Arc::new(provider) as Arc<dyn ProviderAdmin>
         });
         let registry = ProviderAdminRegistry::new(providers).unwrap();
-        let accounts = Arc::new(TestAccounts(vec![
-            account("acct_first", "openai", "peer_test"),
-            account("acct_second", "xai", "peer_test"),
-            account("acct_native", "xai", "oauth"),
-        ]));
-        let store = Arc::new(TestPlans {
-            accounts: accounts.clone(),
+        let accounts = Arc::new(TestAccounts {
+            accounts: vec![
+                account("acct_first", "openai", "peer_test"),
+                account("acct_second", "xai", "peer_test"),
+                account("acct_native", "xai", "oauth"),
+            ],
             records: Mutex::default(),
             failed_provider,
         });
         let transport = Arc::new(TestTransport(Mutex::new(Vec::new())));
         let mut bundle =
-            initialize_peer_upstream(accounts.clone(), store, &registry, transport.clone())
-                .unwrap();
+            initialize_peer_upstream(accounts.clone(), &registry, transport.clone()).unwrap();
         let reader = UpstreamInfoReader::default();
         assert!(
             reader
-                .signal(&accounts.0[0], "model", SystemTime::now())
+                .signal(&accounts.accounts[0], "model", SystemTime::now())
                 .is_none()
         );
         let source = bundle.scheduling_source();
@@ -79,7 +77,7 @@ async fn discovery_uses_provider_capabilities_and_publishes_neutral_signals() {
                 vec!["acct_first", "acct_second"]
             }
         );
-        for account in &accounts.0[..2] {
+        for account in &accounts.accounts[..2] {
             if Some(account.provider().as_str()) == failed_provider {
                 assert!(reader.signal(account, "model", SystemTime::now()).is_none());
                 continue;
@@ -91,8 +89,8 @@ async fn discovery_uses_provider_capabilities_and_publishes_neutral_signals() {
                 .unwrap()
                 .unwrap();
             assert_eq!(
-                observed.upstream.unwrap().node.unwrap().name,
-                account.provider().as_str()
+                observed.upstream.unwrap().connection_revision,
+                UpstreamConnection::for_account(account).revision
             );
             assert!(
                 reader
@@ -103,14 +101,14 @@ async fn discovery_uses_provider_capabilities_and_publishes_neutral_signals() {
         }
         assert!(
             reader
-                .signal(&accounts.0[2], "model", SystemTime::now())
+                .signal(&accounts.accounts[2], "model", SystemTime::now())
                 .is_none()
         );
         drop(worker);
         drop(bundle);
         assert!(
             reader
-                .signal(&accounts.0[0], "model", SystemTime::now())
+                .signal(&accounts.accounts[0], "model", SystemTime::now())
                 .is_none()
         );
     }
@@ -155,7 +153,6 @@ impl PeerTransport for TestTransport {
         let now = Utc::now();
         Ok(serde_json::to_vec(&serde_json::json!({
             "object":"cpr.peer", "schema_version":1,
-            "node":{"id":account.id().as_str(),"name":account.provider().as_str(),"software":"cpr"},
             "observed_at":now.to_rfc3339(),
             "expires_at":(now + chrono::Duration::minutes(5)).to_rfc3339(),
             "capabilities":["key_usage"],
@@ -167,133 +164,11 @@ impl PeerTransport for TestTransport {
     }
 }
 
-struct TestPlans {
+struct TestAccounts {
+    accounts: Vec<ProviderAccount>,
+    records: Mutex<BTreeMap<ProviderAccountId, QuotaObservation>>,
     failed_provider: Option<&'static str>,
-    accounts: Arc<TestAccounts>,
-    records: Mutex<BTreeMap<ProviderAccountId, UpstreamInfoRecord>>,
 }
-
-#[async_trait]
-impl UpstreamInfoStore for TestPlans {
-    async fn list_candidates(
-        &self,
-        provider: &ProviderKind,
-        kinds: &[&str],
-        after: Option<&ProviderAccountId>,
-        limit: u32,
-    ) -> Result<Vec<LoadedCredential>, StoreError> {
-        if Some(provider.as_str()) == self.failed_provider {
-            return Err(StoreError::new(StoreErrorKind::Unavailable));
-        }
-        Ok(self
-            .accounts
-            .0
-            .iter()
-            .filter(|account| {
-                account.provider() == provider
-                    && kinds.contains(&account.authentication_kind())
-                    && after.is_none_or(|id| account.id() > id)
-            })
-            .take(limit as usize)
-            .map(loaded)
-            .collect())
-    }
-    async fn reconcile(
-        &self,
-        connection: &UpstreamConnection,
-        enabled: bool,
-        now: SystemTime,
-    ) -> Result<(), StoreError> {
-        assert!(enabled);
-        self.records
-            .lock()
-            .unwrap()
-            .entry(connection.account_id.clone())
-            .or_insert_with(|| UpstreamInfoRecord {
-                plan: UpstreamInfoPlan {
-                    connection: connection.clone(),
-                    request_generation: 1,
-                    completed_generation: 0,
-                    next_attempt_at: now,
-                    claimed_until: None,
-                    last_attempt_at: None,
-                    last_success_at: None,
-                    last_error: None,
-                    consecutive_failures: 0,
-                },
-                snapshot: None,
-            });
-        Ok(())
-    }
-    async fn request_refresh(
-        &self,
-        _: &UpstreamConnection,
-        _: SystemTime,
-        _: Duration,
-    ) -> Result<UpstreamInfoPlan, StoreError> {
-        panic!("automatic discovery does not enqueue a manual refresh")
-    }
-    async fn read_plans(
-        &self,
-        ids: &[ProviderAccountId],
-    ) -> Result<Vec<UpstreamInfoPlan>, StoreError> {
-        Ok(self
-            .read(ids)
-            .await?
-            .into_iter()
-            .map(|record| record.plan)
-            .collect())
-    }
-    async fn read(&self, ids: &[ProviderAccountId]) -> Result<Vec<UpstreamInfoRecord>, StoreError> {
-        let records = self.records.lock().unwrap();
-        Ok(ids
-            .iter()
-            .filter_map(|id| records.get(id).cloned())
-            .collect())
-    }
-    async fn claim_due(
-        &self,
-        provider: &ProviderKind,
-        now: SystemTime,
-        limit: u32,
-        ttl: Duration,
-    ) -> Result<Vec<UpstreamInfoClaim>, StoreError> {
-        Ok(self
-            .records
-            .lock()
-            .unwrap()
-            .values_mut()
-            .filter(|record| {
-                self.accounts.0.iter().any(|account| {
-                    account.id() == &record.plan.connection.account_id
-                        && account.provider() == provider
-                }) && record.plan.next_attempt_at <= now
-            })
-            .take(limit as usize)
-            .map(|record| {
-                record.plan.claimed_until = Some(now + ttl);
-                record.plan.last_attempt_at = Some(now);
-                UpstreamInfoClaim {
-                    plan: record.plan.clone(),
-                    claim_token: uuid::Uuid::new_v4(),
-                }
-            })
-            .collect())
-    }
-    async fn complete(&self, completion: UpstreamInfoCompletion) -> Result<bool, StoreError> {
-        let mut records = self.records.lock().unwrap();
-        let record = records.get_mut(&completion.connection.account_id).unwrap();
-        assert_eq!(record.plan.connection, completion.connection);
-        record.snapshot = Some(completion.result.unwrap());
-        record.plan.completed_generation = completion.request_generation;
-        record.plan.last_success_at = Some(completion.completed_at);
-        record.plan.claimed_until = None;
-        record.plan.next_attempt_at = completion.next_attempt_at;
-        Ok(true)
-    }
-}
-
-struct TestAccounts(Vec<ProviderAccount>);
 
 fn loaded(account: &ProviderAccount) -> LoadedCredential {
     LoadedCredential {
@@ -312,7 +187,7 @@ impl ProviderAccountStore for TestAccounts {
         account_id: &ProviderAccountId,
     ) -> Result<Option<ProviderAccount>, StoreError> {
         Ok(self
-            .0
+            .accounts
             .iter()
             .find(|account| account.id() == account_id)
             .cloned())
@@ -322,9 +197,17 @@ impl ProviderAccountStore for TestAccounts {
     }
     async fn list_for_provider(
         &self,
-        _provider: &ProviderKind,
+        provider: &ProviderKind,
     ) -> Result<Vec<ProviderAccount>, StoreError> {
-        panic!("unused account operation")
+        if Some(provider.as_str()) == self.failed_provider {
+            return Err(StoreError::new(StoreErrorKind::Unavailable));
+        }
+        Ok(self
+            .accounts
+            .iter()
+            .filter(|account| account.provider() == provider)
+            .cloned()
+            .collect())
     }
     async fn list_refresh_candidates(
         &self,
@@ -343,7 +226,7 @@ impl ProviderAccountStore for TestAccounts {
         &self,
         id: &ProviderAccountId,
     ) -> Result<LoadedCredential, StoreError> {
-        self.0
+        self.accounts
             .iter()
             .find(|account| account.id() == id)
             .map(loaded)
@@ -357,15 +240,23 @@ impl ProviderAccountStore for TestAccounts {
     }
     async fn get_quotas(
         &self,
-        _accounts: &[ProviderAccountId],
+        accounts: &[ProviderAccountId],
     ) -> Result<Vec<QuotaObservation>, StoreError> {
-        panic!("unused account operation")
+        let stored = self.records.lock().unwrap();
+        Ok(accounts
+            .iter()
+            .filter_map(|id| stored.get(id).cloned())
+            .collect())
     }
     async fn compare_and_swap_quota(
         &self,
-        _observation: QuotaObservation,
+        observation: QuotaObservation,
     ) -> Result<QuotaWriteOutcome, StoreError> {
-        panic!("unused account operation")
+        self.records
+            .lock()
+            .unwrap()
+            .insert(observation.account_id.clone(), observation);
+        Ok(QuotaWriteOutcome::Updated)
     }
     async fn touch_quota_observation(
         &self,

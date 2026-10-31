@@ -566,6 +566,7 @@ impl GrokCredentialRepository {
         let outcome = self
             .store
             .compare_and_swap_quota(QuotaObservation {
+                expected_connection: None,
                 plan_type: None,
                 account_id,
                 expected_revision,

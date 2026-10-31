@@ -1,4 +1,4 @@
-//! 上游互联观测、后台计划与额度恢复合同，原始协议由控制面解释
+//! 账号连接身份与上游调度只读合同，原始协议由控制面解释
 
 use std::{
     sync::{Arc, OnceLock, Weak},
@@ -7,9 +7,7 @@ use std::{
 
 use sha2::{Digest, Sha256};
 
-use super::{
-    CredentialRevision, OpaqueProviderData, ProviderAccount, ProviderAccountId, QuotaState,
-};
+use super::{CredentialRevision, ProviderAccount, ProviderAccountId};
 
 /// 请求发出时的连接身份；出口摘要包含托管代理解析后的认证信息，但不持久化明文
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -73,47 +71,6 @@ impl UpstreamInfoFailure {
             Self::Unavailable => "unavailable",
         }
     }
-}
-
-/// 同步元数据独立于观测正文，计划查询与领取不加载完整快照
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct UpstreamInfoPlan {
-    pub connection: UpstreamConnection,
-    pub request_generation: u64,
-    pub completed_generation: u64,
-    pub next_attempt_at: SystemTime,
-    pub claimed_until: Option<SystemTime>,
-    pub last_attempt_at: Option<SystemTime>,
-    pub last_success_at: Option<SystemTime>,
-    pub last_error: Option<UpstreamInfoFailure>,
-    pub consecutive_failures: u32,
-}
-
-/// 同一连接最后成功观测与独立同步计划，失败不覆盖旧观测
-#[derive(Debug, Clone, PartialEq)]
-pub struct UpstreamInfoRecord {
-    pub plan: UpstreamInfoPlan,
-    pub snapshot: Option<OpaqueProviderData>,
-}
-
-/// 每次领取使用独立标识，计划删除重建也不能接受旧执行者的结果
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct UpstreamInfoClaim {
-    pub plan: UpstreamInfoPlan,
-    pub claim_token: uuid::Uuid,
-}
-
-/// 完整观测只在连接身份、领取标识与代次仍匹配时写入
-#[derive(Debug, Clone, PartialEq)]
-pub struct UpstreamInfoCompletion {
-    pub connection: UpstreamConnection,
-    pub request_generation: u64,
-    pub claim_token: uuid::Uuid,
-    pub completed_at: SystemTime,
-    pub next_attempt_at: SystemTime,
-    pub result: Result<OpaqueProviderData, UpstreamInfoFailure>,
-    /// 控制面确认的额度事实，随有效快照原子提交，未知或过期观测不得覆盖既有事实
-    pub quota: Option<QuotaState>,
 }
 
 /// 调度侧只消费已发布的中立观测，不读取协议、凭据或持久存储

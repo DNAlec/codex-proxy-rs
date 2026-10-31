@@ -35,7 +35,7 @@ pub trait PeerTransport: Send + Sync {
     ) -> Result<Vec<u8>, PeerFetchFailure>;
 }
 
-/// 账号用例读取公共互联观测，刷新动作只提交本地计划
+/// 账号用例读取公共互联观测，显式刷新等待额度查询完成
 #[async_trait]
 pub trait PeerUpstreamService: gateway_core::account::UpstreamInfoSource {
     async fn account_changed(
@@ -43,10 +43,13 @@ pub trait PeerUpstreamService: gateway_core::account::UpstreamInfoSource {
         id: &gateway_core::account::ProviderAccountId,
     ) -> Result<(), gateway_core::error::StoreError>;
     fn forget(&self, id: &gateway_core::account::ProviderAccountId);
-    async fn request_refresh(
+    async fn refresh_quota(
         &self,
         id: &gateway_core::account::ProviderAccountId,
-    ) -> Result<crate::model::upstream_info::UpstreamRefreshReceipt, gateway_core::error::StoreError>;
+    ) -> Result<
+        crate::model::provider_credentials::ProviderQuota,
+        super::provider::ProviderAdminError,
+    >;
     async fn read_quota(
         &self,
         account_id: &gateway_core::account::ProviderAccountId,

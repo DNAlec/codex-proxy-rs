@@ -1,7 +1,6 @@
 //! Provider 账号持久化端口
 
 use async_trait::async_trait;
-use std::time::{Duration, SystemTime};
 
 use crate::error::StoreError;
 use crate::identity::ProviderKind;
@@ -10,8 +9,7 @@ use super::{
     AccountStateChange, CredentialCasOutcome, CredentialCasUpdate, CredentialRevision,
     LoadedCredential, NewProviderAccount, ProviderAccount, ProviderAccountId,
     ProviderAccountUpdate, ProviderRefreshQuery, QuotaAccessChange, QuotaObservation,
-    QuotaObservationTouch, QuotaWriteOutcome, UpstreamConnection, UpstreamInfoClaim,
-    UpstreamInfoCompletion, UpstreamInfoPlan, UpstreamInfoRecord,
+    QuotaObservationTouch, QuotaObservationVersion, QuotaWriteOutcome,
 };
 
 /// `provider_accounts` 的数据库中立端口
@@ -62,6 +60,23 @@ pub trait ProviderAccountStore: Send + Sync {
         accounts: &[ProviderAccountId],
     ) -> Result<Vec<QuotaObservation>, StoreError>;
 
+    /// 仅查询快照版本，列表缓存校验不物化额度正文
+    async fn get_quota_versions(
+        &self,
+        accounts: &[ProviderAccountId],
+    ) -> Result<Vec<QuotaObservationVersion>, StoreError> {
+        Ok(self
+            .get_quotas(accounts)
+            .await?
+            .into_iter()
+            .map(|quota| QuotaObservationVersion {
+                account_id: quota.account_id,
+                credential_revision: quota.expected_revision,
+                observed_at: quota.observed_at,
+            })
+            .collect())
+    }
+
     async fn compare_and_swap_quota(
         &self,
         observation: QuotaObservation,
@@ -88,57 +103,4 @@ pub trait ProviderAccountStore: Send + Sync {
     ) -> Result<(), StoreError>;
 
     async fn delete_account(&self, account: &ProviderAccountId) -> Result<(), StoreError>;
-}
-
-/// 与 Provider 无关的计划持久化端口，所有方法均只访问本地存储
-#[async_trait]
-pub trait UpstreamInfoStore: Send + Sync {
-    /// 按账号 ID 游标扫描 Provider 声明支持互联的认证种类；通用存储不判断认证协议
-    async fn list_candidates(
-        &self,
-        provider: &ProviderKind,
-        authentication_kinds: &[&str],
-        after: Option<&ProviderAccountId>,
-        limit: u32,
-    ) -> Result<Vec<LoadedCredential>, StoreError>;
-
-    /// 新连接创建立即到期的计划；身份变化清空旧观测；停用则删除计划与观测
-    /// 写入前须按当前账号事实核对连接身份；匹配失败返回 Conflict
-    async fn reconcile(
-        &self,
-        connection: &UpstreamConnection,
-        enabled: bool,
-        now: SystemTime,
-    ) -> Result<(), StoreError>;
-
-    /// 请求代次合并；正在领取或排队的计划不重复递增，失败退避不能被手动绕过
-    async fn request_refresh(
-        &self,
-        connection: &UpstreamConnection,
-        now: SystemTime,
-        minimum_interval: Duration,
-    ) -> Result<UpstreamInfoPlan, StoreError>;
-
-    /// 批量读取同步元数据，用于核对缓存观测版本，不读取快照正文
-    async fn read_plans(
-        &self,
-        accounts: &[ProviderAccountId],
-    ) -> Result<Vec<UpstreamInfoPlan>, StoreError>;
-
-    async fn read(
-        &self,
-        accounts: &[ProviderAccountId],
-    ) -> Result<Vec<UpstreamInfoRecord>, StoreError>;
-
-    /// 原子领取到期计划并设置租期；每次领取生成不能复用的领取标识
-    async fn claim_due(
-        &self,
-        provider: &ProviderKind,
-        now: SystemTime,
-        limit: u32,
-        lease_duration: Duration,
-    ) -> Result<Vec<UpstreamInfoClaim>, StoreError>;
-
-    /// 返回 false 代表连接、领取标识或代次已经变化；Unauthorized 必须同时清空观测
-    async fn complete(&self, completion: UpstreamInfoCompletion) -> Result<bool, StoreError>;
 }

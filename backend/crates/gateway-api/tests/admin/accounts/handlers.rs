@@ -10,7 +10,7 @@ use tower::ServiceExt as _;
 use super::super::{AdminTestFixture, AdminTestState};
 
 #[tokio::test]
-async fn upstream_refresh_requires_admin_and_returns_an_accepted_generation() {
+async fn peer_refresh_uses_the_account_quota_endpoint_and_requires_admin() {
     use gateway_core::account::{AccountStatusFacts, CredentialState, QuotaState};
     let fixture = AdminTestFixture::new().await;
     fixture.auth.insert_session("valid-session");
@@ -27,27 +27,14 @@ async fn upstream_refresh_requires_admin_and_returns_an_accepted_generation() {
         chrono::Utc::now(),
         "api_key",
     ));
-    for (authenticated, ids, expected) in [
-        (
-            false,
-            serde_json::json!(["acct_cooldown"]),
-            StatusCode::UNAUTHORIZED,
-        ),
-        (true, serde_json::json!([]), StatusCode::BAD_REQUEST),
-        (
-            true,
-            serde_json::json!(["invalid"]),
-            StatusCode::BAD_REQUEST,
-        ),
-        (
-            true,
-            serde_json::json!(["acct_cooldown", "acct_cooldown"]),
-            StatusCode::ACCEPTED,
-        ),
+    for (authenticated, id, expected) in [
+        (false, "acct_cooldown", StatusCode::UNAUTHORIZED),
+        (true, "invalid", StatusCode::BAD_REQUEST),
+        (true, "acct_cooldown", StatusCode::OK),
     ] {
         let mut request = Request::builder()
             .method("POST")
-            .uri("/api/admin/accounts/upstream-info/refresh")
+            .uri("/api/admin/accounts/quota/refresh")
             .header("x-request-id", "req_upstream_refresh")
             .header(header::CONTENT_TYPE, "application/json");
         if authenticated {
@@ -57,21 +44,16 @@ async fn upstream_refresh_requires_admin_and_returns_an_accepted_generation() {
             .with_state(fixture.state())
             .oneshot(
                 request
-                    .body(Body::from(
-                        serde_json::json!({"accountIds":ids}).to_string(),
-                    ))
+                    .body(Body::from(serde_json::json!({"accountId":id}).to_string()))
                     .unwrap(),
             )
             .await
             .unwrap();
         assert_eq!(response.status(), expected);
-        if expected == StatusCode::ACCEPTED {
+        if expected == StatusCode::OK {
             let body = to_bytes(response.into_body(), 8192).await.unwrap();
             let value: serde_json::Value = serde_json::from_slice(&body).unwrap();
-            assert_eq!(
-                value["data"]["items"],
-                serde_json::json!([{"accountId":"acct_cooldown", "connectionRevision":"connection-7", "requestGeneration":7, "state":"queued"}])
-            );
+            assert_eq!(value["data"]["account"]["id"], "acct_cooldown");
         }
     }
 }

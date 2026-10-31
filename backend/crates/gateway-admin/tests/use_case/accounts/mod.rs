@@ -2659,8 +2659,7 @@ async fn quota_forecast_mid_cycle_sampling_accepts_small_reset_jitter_but_not_a_
 #[tokio::test]
 async fn peer_account_usage_should_follow_budget_windows_without_borrowing_pool_windows() {
     use gateway_admin::model::upstream_info::{
-        ProviderUpstreamInfo, UpstreamQuotaAmount, UpstreamQuotaWindow, UpstreamSync,
-        UpstreamSyncState,
+        ProviderUpstreamInfo, UpstreamQuotaAmount, UpstreamQuotaWindow,
     };
 
     for longest in [86_400, 604_800] {
@@ -2673,15 +2672,9 @@ async fn peer_account_usage_should_follow_budget_windows_without_borrowing_pool_
         let mut quota = empty_quota();
         quota.upstream = Some(ProviderUpstreamInfo {
             discovered: true,
-            node: None,
             observed_at: Some(Utc::now()),
             stale: false,
             connection_revision: "1".to_owned(),
-            sync: UpstreamSync {
-                state: UpstreamSyncState::Idle,
-                request_generation: 1,
-                completed_generation: 1,
-            },
             last_error: None,
             pool: None,
         });

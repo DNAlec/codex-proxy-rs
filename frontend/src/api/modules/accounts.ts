@@ -184,30 +184,17 @@ export interface Account {
 
 export interface AccountUpstream {
   discovered: boolean
-  node: { id: string, name: string, software: string } | null
   observedAt: string | null
   observedAtDisplay: string
   observedAtRelative: RelativeTimeView | null
   stale: boolean
   connectionRevision: string
-  sync: {
-    state: 'idle' | 'queued' | 'running'
-    requestGeneration: number
-    completedGeneration: number
-  }
   lastError: 'unauthorized' | 'unsupported' | 'rate_limited' | 'invalid_response' | 'unavailable' | null
   pool: {
     accountCount: number
     states: { ready: number, cooldown: number, exhausted: number, disabled: number, error: number, unknown: number }
     plans: Array<{ name: string, count: number }>
   } | null
-}
-
-export interface AccountUpstreamRefreshItem {
-  accountId: string
-  connectionRevision: string
-  requestGeneration: number
-  state: 'queued' | 'running'
 }
 
 export interface AccountCapabilities {
@@ -623,15 +610,6 @@ function stableAvatarVersion(value: string) {
 export function refreshAccountQuota(data: AccountIdParam, options: RequestOptions = {}) {
   return request<AccountQuotaResponse>({
     url: '/api/admin/accounts/quota/refresh',
-    method: 'POST',
-    data,
-    ...options,
-  })
-}
-
-export function refreshAccountUpstreamInfo(data: { accountIds: string[] }, options: RequestOptions = {}) {
-  return request<{ items: AccountUpstreamRefreshItem[] }>({
-    url: '/api/admin/accounts/upstream-info/refresh',
     method: 'POST',
     data,
     ...options,

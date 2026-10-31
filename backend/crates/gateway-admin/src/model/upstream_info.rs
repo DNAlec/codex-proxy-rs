@@ -5,52 +5,11 @@ use chrono::{DateTime, Utc};
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProviderUpstreamInfo {
     pub discovered: bool,
-    pub node: Option<UpstreamNode>,
     pub observed_at: Option<DateTime<Utc>>,
     pub stale: bool,
     pub connection_revision: String,
-    pub sync: UpstreamSync,
     pub last_error: Option<String>,
     pub pool: Option<UpstreamPool>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct UpstreamNode {
-    pub id: String,
-    pub name: String,
-    pub software: String,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum UpstreamSyncState {
-    Idle,
-    Queued,
-    Running,
-}
-
-impl UpstreamSyncState {
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            Self::Idle => "idle",
-            Self::Queued => "queued",
-            Self::Running => "running",
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct UpstreamSync {
-    pub state: UpstreamSyncState,
-    pub request_generation: u64,
-    pub completed_generation: u64,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct UpstreamRefreshReceipt {
-    pub account_id: String,
-    pub connection_revision: String,
-    pub request_generation: u64,
-    pub state: UpstreamSyncState,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

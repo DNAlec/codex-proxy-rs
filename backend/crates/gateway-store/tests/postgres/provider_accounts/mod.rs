@@ -10,9 +10,9 @@ mod admin_adapter;
 mod authorization;
 mod deletion;
 mod protection_revision;
+mod quota;
 mod quota_forecast;
 mod timestamps;
-mod upstream_info;
 mod usage_projection;
 
 use chrono::{TimeDelta, Utc};
@@ -206,6 +206,7 @@ async fn core_quota_batch_reads_only_observed_accounts_in_one_contract_call() {
         let observed_at = SystemTime::now();
         let outcome = repository
             .compare_and_swap_quota(QuotaObservation {
+                expected_connection: None,
                 plan_type: None,
                 account_id: ProviderAccountId::new(id).expect("account id"),
                 expected_revision: revision,
@@ -282,6 +283,7 @@ async fn quota_observation_touch_preserves_quota_state_and_advances_account_upda
     assert_eq!(
         repository
             .compare_and_swap_quota(QuotaObservation {
+                expected_connection: None,
                 plan_type: None,
                 account_id: account_id.clone(),
                 expected_revision: revision,
@@ -381,6 +383,7 @@ async fn delayed_provider_observations_cannot_overwrite_newer_state_or_quota() {
         .expect("older observation time");
 
     let quota = |marker: &str, observed_at| QuotaObservation {
+        expected_connection: None,
         plan_type: Some(if marker == "newer" { "pro" } else { "plus" }.to_owned()),
         account_id: account_id.clone(),
         expected_revision: revision,
@@ -466,6 +469,7 @@ async fn quota_plan_changes_survive_inflight_background_and_manual_token_refresh
     let config_revision = current_revision(&database.pool).await;
     let observed_at = SystemTime::now();
     let observation = QuotaObservation {
+        expected_connection: None,
         account_id: id.clone(),
         expected_revision: original.revision(),
         plan_type: Some("pro".to_owned()),
@@ -517,6 +521,7 @@ async fn quota_plan_changes_survive_inflight_background_and_manual_token_refresh
     let current = repository.get_account(&id).await.unwrap().unwrap();
     assert_eq!(current.plan_type(), Some("pro"));
     let stale = QuotaObservation {
+        expected_connection: None,
         plan_type: Some("free".to_owned()),
         ..observation
     };
@@ -548,6 +553,7 @@ async fn quota_plan_changes_survive_inflight_background_and_manual_token_refresh
     let observed_at = SystemTime::now();
     repository
         .compare_and_swap_quota(QuotaObservation {
+            expected_connection: None,
             account_id: id.clone(),
             expected_revision: refreshed.revision(),
             plan_type: None,
@@ -1543,6 +1549,7 @@ async fn account_enable_preserves_facts_and_explicit_recovery_clears_them() {
     let observed_at = SystemTime::now();
     repository
         .compare_and_swap_quota(QuotaObservation {
+            expected_connection: None,
             plan_type: None,
             account_id: ProviderAccountId::new("acct_recovery").expect("account ID"),
             expected_revision: CredentialRevision::new(1).expect("credential revision"),

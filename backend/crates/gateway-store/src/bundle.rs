@@ -11,7 +11,6 @@ pub struct StoreBundle {
     admin_ports: AdminStorePorts,
     core_ports: CoreStorePorts,
     provider_ports: ProviderStorePorts,
-    upstream_info: Arc<dyn gateway_core::account::UpstreamInfoStore>,
     retention: Arc<dyn gateway_admin::ports::retention::RetentionStore>,
     worker_leader_lease: Arc<dyn WorkerLeaderLeasePort>,
     health_probes: Vec<Arc<dyn HealthProbe>>,
@@ -35,11 +34,6 @@ impl StoreBundle {
     #[must_use]
     pub fn core_ports(&self) -> CoreStorePorts {
         self.core_ports.clone()
-    }
-
-    #[must_use]
-    pub fn upstream_info(&self) -> Arc<dyn gateway_core::account::UpstreamInfoStore> {
-        Arc::clone(&self.upstream_info)
     }
 
     #[must_use]
@@ -149,8 +143,6 @@ async fn connect(
         postgres::PgProviderAccountRepository::new(pool.clone())
             .with_account_error_protection(cooldowns.clone()),
     );
-    let upstream_info: Arc<dyn gateway_core::account::UpstreamInfoStore> =
-        provider_accounts.clone();
     let account_store: Arc<dyn ProviderAccountStore> = provider_accounts;
 
     let credential_leases =
@@ -339,7 +331,6 @@ async fn connect(
         admin_ports,
         core_ports,
         provider_ports,
-        upstream_info,
         retention,
         worker_leader_lease,
         health_probes,

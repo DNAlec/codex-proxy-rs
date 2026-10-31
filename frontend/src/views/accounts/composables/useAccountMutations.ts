@@ -21,7 +21,6 @@ import { errorMessage, withMinimumDuration } from '@/utils/operation'
 import { isSupportedProvider } from '@/utils/providers'
 
 import { useAccountOnboarding } from './useAccountOnboarding'
-import { useAccountUpstreamRefresh } from './useAccountUpstreamRefresh'
 
 export function useAccountMutations(options: {
   accounts: Ref<Account[]>
@@ -31,7 +30,6 @@ export function useAccountMutations(options: {
   replaceAccount: (account: Account) => Promise<boolean>
 }) {
   const loadAccounts = options.reload
-  const upstreamRefresh = useAccountUpstreamRefresh(options.accounts)
   const { downloadJson } = useDownload()
   const onboarding = useAccountOnboarding({
     reload: loadAccounts,
@@ -247,20 +245,9 @@ export function useAccountMutations(options: {
   }
 
   async function handleRefreshQuota(accountId: string) {
-    const account = options.accounts.value.find(item => item.id === accountId)
     await refreshingQuotaAccounts.run(accountId, async () => {
       try {
-        const result = account?.upstream?.discovered
-          ? await upstreamRefresh.refresh(account)
-          : await withMinimumDuration(() => refreshAccountQuota({ accountId }))
-        if (!result)
-          return
-        if ('pending' in result) {
-          ZNotification.info({
-            message: t('accounts.upstream.accepted'),
-          })
-          return
-        }
+        const result = await withMinimumDuration(() => refreshAccountQuota({ accountId }))
         const remainsVisible = await options.replaceAccount(result.account)
         if (!remainsVisible) {
           const selectedIds = new Set(options.selectedIds.value)
@@ -278,13 +265,7 @@ export function useAccountMutations(options: {
           })
         }
       }
-      catch (error) {
-        if (account?.upstream?.discovered) {
-          ZNotification.error({
-            message: errorMessage(error),
-          })
-        }
-      }
+      catch {}
     })
   }
 

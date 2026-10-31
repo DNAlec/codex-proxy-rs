@@ -2,281 +2,13 @@
 
 use super::*;
 use crate::support::MemoryCooldownPort;
-use gateway_core::{
-    account::{
-        LoadedCredential, UpstreamConnection, UpstreamInfoClaim, UpstreamInfoCompletion,
-        UpstreamInfoFailure, UpstreamInfoPlan, UpstreamInfoRecord, UpstreamInfoStore,
-    },
-    error::{StoreError, StoreErrorKind},
-    task::WorkerCycleContext,
-};
+use gateway_core::{account::UpstreamConnection, task::WorkerCycleContext};
 use provider_openai::credential::ResponsesTransport;
-
-pub(super) struct MemoryUpstreamInfoStore {
-    accounts: Arc<MemoryAccountStore>,
-    records: Mutex<BTreeMap<ProviderAccountId, UpstreamInfoRecord>>,
-    claims: Mutex<BTreeMap<ProviderAccountId, uuid::Uuid>>,
-    snapshot_reads: std::sync::atomic::AtomicUsize,
-    largest_snapshot_read: std::sync::atomic::AtomicUsize,
-}
-
-impl MemoryUpstreamInfoStore {
-    pub(super) fn new(accounts: Arc<MemoryAccountStore>) -> Self {
-        Self {
-            accounts,
-            records: Mutex::new(BTreeMap::new()),
-            claims: Mutex::new(BTreeMap::new()),
-            snapshot_reads: std::sync::atomic::AtomicUsize::new(0),
-            largest_snapshot_read: std::sync::atomic::AtomicUsize::new(0),
-        }
-    }
-
-    async fn current(&self, connection: &UpstreamConnection) -> Result<(), StoreError> {
-        let account = self
-            .accounts
-            .get_account(&connection.account_id)
-            .await?
-            .ok_or_else(|| StoreError::new(StoreErrorKind::InvalidData))?;
-        if UpstreamConnection::for_account(&account) != *connection {
-            return Err(StoreError::new(StoreErrorKind::Conflict));
-        }
-        Ok(())
-    }
-
-    fn due_now(&self, id: &ProviderAccountId) {
-        self.records
-            .lock()
-            .unwrap()
-            .get_mut(id)
-            .unwrap()
-            .plan
-            .next_attempt_at = SystemTime::now() - Duration::from_secs(1);
-    }
-}
-
-#[async_trait::async_trait]
-impl UpstreamInfoStore for MemoryUpstreamInfoStore {
-    async fn list_candidates(
-        &self,
-        provider: &ProviderKind,
-        authentication_kinds: &[&str],
-        after: Option<&ProviderAccountId>,
-        limit: u32,
-    ) -> Result<Vec<LoadedCredential>, StoreError> {
-        let accounts = self.accounts.list_for_provider(provider).await?;
-        let mut result = Vec::new();
-        for account in accounts
-            .into_iter()
-            .filter(|account| {
-                authentication_kinds.contains(&account.authentication_kind())
-                    && after.is_none_or(|after| account.id() > after)
-            })
-            .take(limit as usize)
-        {
-            result.push(self.accounts.load_current_credential(account.id()).await?);
-        }
-        Ok(result)
-    }
-
-    async fn reconcile(
-        &self,
-        connection: &UpstreamConnection,
-        enabled: bool,
-        now: SystemTime,
-    ) -> Result<(), StoreError> {
-        self.current(connection).await?;
-        let mut claims = self.claims.lock().unwrap();
-        let mut records = self.records.lock().unwrap();
-        if !enabled {
-            claims.remove(&connection.account_id);
-            records.remove(&connection.account_id);
-            return Ok(());
-        }
-        if records
-            .get(&connection.account_id)
-            .is_none_or(|record| record.plan.connection != *connection)
-        {
-            records.insert(
-                connection.account_id.clone(),
-                UpstreamInfoRecord {
-                    plan: UpstreamInfoPlan {
-                        connection: connection.clone(),
-                        request_generation: 1,
-                        completed_generation: 0,
-                        next_attempt_at: now,
-                        claimed_until: None,
-                        last_attempt_at: None,
-                        last_success_at: None,
-                        last_error: None,
-                        consecutive_failures: 0,
-                    },
-                    snapshot: None,
-                },
-            );
-        }
-        Ok(())
-    }
-
-    async fn request_refresh(
-        &self,
-        connection: &UpstreamConnection,
-        now: SystemTime,
-        minimum_interval: Duration,
-    ) -> Result<UpstreamInfoPlan, StoreError> {
-        self.current(connection).await?;
-        let mut records = self.records.lock().unwrap();
-        let record = records
-            .get_mut(&connection.account_id)
-            .ok_or_else(|| StoreError::new(StoreErrorKind::InvalidData))?;
-        if record.plan.request_generation == record.plan.completed_generation {
-            record.plan.request_generation += 1;
-            let earliest = record
-                .plan
-                .last_attempt_at
-                .map_or(now, |time| time + minimum_interval)
-                .max(now);
-            record.plan.next_attempt_at = if record.plan.last_error.is_some() {
-                record.plan.next_attempt_at.max(earliest)
-            } else {
-                earliest
-            };
-        }
-        Ok(record.plan.clone())
-    }
-
-    async fn read_plans(
-        &self,
-        accounts: &[ProviderAccountId],
-    ) -> Result<Vec<UpstreamInfoPlan>, StoreError> {
-        let records = self.records.lock().unwrap();
-        Ok(accounts
-            .iter()
-            .filter_map(|id| records.get(id).map(|record| record.plan.clone()))
-            .collect())
-    }
-
-    async fn read(
-        &self,
-        accounts: &[ProviderAccountId],
-    ) -> Result<Vec<UpstreamInfoRecord>, StoreError> {
-        self.snapshot_reads
-            .fetch_add(accounts.len(), std::sync::atomic::Ordering::Relaxed);
-        self.largest_snapshot_read
-            .fetch_max(accounts.len(), std::sync::atomic::Ordering::Relaxed);
-        let records = self.records.lock().unwrap();
-        Ok(accounts
-            .iter()
-            .filter_map(|id| records.get(id).cloned())
-            .collect())
-    }
-
-    async fn claim_due(
-        &self,
-        _: &ProviderKind,
-        now: SystemTime,
-        limit: u32,
-        lease_duration: Duration,
-    ) -> Result<Vec<UpstreamInfoClaim>, StoreError> {
-        let mut claims = self.claims.lock().unwrap();
-        let mut records = self.records.lock().unwrap();
-        Ok(records
-            .values_mut()
-            .filter(|record| {
-                record.plan.next_attempt_at <= now
-                    && record.plan.claimed_until.is_none_or(|expiry| expiry <= now)
-            })
-            .take(limit as usize)
-            .map(|record| {
-                if record.plan.request_generation == record.plan.completed_generation
-                    || record.plan.claimed_until.is_some()
-                {
-                    record.plan.request_generation += 1;
-                }
-                record.plan.claimed_until = Some(now + lease_duration);
-                record.plan.last_attempt_at = Some(now);
-                let claim_token = uuid::Uuid::new_v4();
-                claims.insert(record.plan.connection.account_id.clone(), claim_token);
-                UpstreamInfoClaim {
-                    plan: record.plan.clone(),
-                    claim_token,
-                }
-            })
-            .collect())
-    }
-
-    async fn complete(&self, completion: UpstreamInfoCompletion) -> Result<bool, StoreError> {
-        if self.current(&completion.connection).await.is_err() {
-            return Ok(false);
-        }
-        let recovery = completion.quota.filter(|_| completion.result.is_ok());
-        {
-            let mut claims = self.claims.lock().unwrap();
-            let mut records = self.records.lock().unwrap();
-            let Some(record) = records.get_mut(&completion.connection.account_id) else {
-                return Ok(false);
-            };
-            if claims.get(&completion.connection.account_id) != Some(&completion.claim_token)
-                || record
-                    .plan
-                    .claimed_until
-                    .is_none_or(|expiry| expiry <= completion.completed_at)
-                || record.plan.connection != completion.connection
-                || record.plan.request_generation != completion.request_generation
-            {
-                return Ok(false);
-            }
-            claims.remove(&completion.connection.account_id);
-            record.plan.completed_generation = completion.request_generation;
-            record.plan.claimed_until = None;
-            record.plan.next_attempt_at = completion.next_attempt_at;
-            match completion.result {
-                Ok(snapshot) => {
-                    record.snapshot = Some(snapshot);
-                    record.plan.last_success_at = Some(completion.completed_at);
-                    record.plan.last_error = None;
-                    record.plan.consecutive_failures = 0;
-                }
-                Err(error) => {
-                    record.plan.last_error = Some(error);
-                    record.plan.consecutive_failures += 1;
-                    if error == UpstreamInfoFailure::Unauthorized {
-                        record.snapshot = None;
-                    }
-                }
-            }
-        }
-        if let Some(state) = recovery
-            && state.access() != gateway_core::account::QuotaAccessState::Unknown
-            && let Some(observed_at) = state.observed_at()
-        {
-            let account = self
-                .accounts
-                .account(completion.connection.account_id.as_str())
-                .unwrap();
-            if account.enabled()
-                && account
-                    .quota()
-                    .observed_at()
-                    .is_none_or(|time| time < observed_at)
-            {
-                self.accounts
-                    .apply_quota_access(QuotaAccessChange {
-                        account_id: account.id().clone(),
-                        expected_revision: account.revision(),
-                        state,
-                    })
-                    .await?;
-            }
-        }
-        Ok(true)
-    }
-}
 
 fn peer_document() -> Value {
     let now = Utc::now();
     json!({
         "object":"cpr.peer", "schema_version":1,
-        "node":{"id":"synthetic-peer","name":"测试上游","software":"cpr"},
         "observed_at":now.to_rfc3339(), "expires_at":(now + chrono::Duration::minutes(5)).to_rfc3339(),
         "capabilities":["key_usage", "pool_summary"],
         "usage":{"status":"available","observed_at":now.to_rfc3339(),"data":{"unit":"USD","allowed":true,"daily":{"limit_reached":false,"total":"10","used":"2","remaining":"8","resetsAt":(now + chrono::Duration::days(1)).to_rfc3339()},"weekly":{"limit_reached":false,"total":"50","used":"5","remaining":"45","resetsAt":(now + chrono::Duration::days(7)).to_rfc3339()}}},
@@ -557,7 +289,7 @@ async fn fixture(
 ) -> (
     PeerFixture,
     Arc<MemoryAccountStore>,
-    Arc<MemoryUpstreamInfoStore>,
+    Arc<MemoryAccountStore>,
     ProviderAccountId,
     TestOpenAiConfig,
 ) {
@@ -570,9 +302,9 @@ async fn fixture(
         )
         .await;
     let id = ProviderAccountId::new("acct_peer").unwrap();
-    let upstream = Arc::new(MemoryUpstreamInfoStore::new(accounts.clone()));
+    let upstream = accounts.clone();
     let config = valid_config();
-    let bundle = peer_fixture(config.config.clone(), accounts.clone(), upstream.clone()).await;
+    let bundle = peer_fixture(config.config.clone(), accounts.clone()).await;
     (bundle, accounts, upstream, id, config)
 }
 
@@ -671,7 +403,7 @@ async fn key_usage_retains_unlimited_windows_without_pool_disclosure() {
 }
 
 #[tokio::test]
-async fn refresh_and_reads_are_local_and_worker_owns_the_upstream_request() {
+async fn manual_refresh_queries_upstream_and_merges_concurrent_refreshes() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/custom/v1/cpr/link"))
@@ -683,17 +415,15 @@ async fn refresh_and_reads_are_local_and_worker_owns_the_upstream_request() {
         .expect(1)
         .mount(&server)
         .await;
-    let (mut bundle, _, _, id, _config) = fixture(&server).await;
+    let (bundle, _, _, id, _config) = fixture(&server).await;
     let admin = bundle.admin_provider();
     admin.account_changed(&id).await.unwrap();
-    let first = admin.request_refresh(&id).await.unwrap();
-    let second = admin.request_refresh(&id).await.unwrap();
-    assert_eq!(first.request_generation, second.request_generation);
-    assert!(quota(&bundle, &id).await.upstream.unwrap().node.is_none());
     assert!(server.received_requests().await.unwrap().is_empty());
-    cycle(&worker(&mut bundle)).await;
+    let (first, second) = tokio::join!(admin.refresh_quota(&id), admin.refresh_quota(&id));
+    assert!(first.unwrap().upstream.unwrap().discovered);
+    assert!(second.unwrap().upstream.unwrap().discovered);
     let observed = quota(&bundle, &id).await;
-    assert_eq!(observed.upstream.unwrap().node.unwrap().name, "测试上游");
+    assert!(observed.upstream.unwrap().discovered);
     assert_eq!(observed.windows[0].used_percent, Some(20.0));
     assert_eq!(
         observed.windows[0].local_usage_attribution,
@@ -787,7 +517,7 @@ async fn transient_failure_preserves_observation_and_revocation_erases_it() {
         .respond_with(ResponseTemplate::new(200).set_body_json(peer_document()))
         .mount(&server)
         .await;
-    let (mut bundle, _, store, id, _config) = fixture(&server).await;
+    let (mut bundle, _, _store, id, _config) = fixture(&server).await;
     let worker = worker(&mut bundle);
     cycle(&worker).await;
     let observed_at = quota(&bundle, &id).await.observed_at;
@@ -796,7 +526,7 @@ async fn transient_failure_preserves_observation_and_revocation_erases_it() {
         .respond_with(ResponseTemplate::new(503))
         .mount(&server)
         .await;
-    store.due_now(&id);
+    bundle.admin_provider().forget(&id);
     cycle(&worker).await;
     let failed = quota(&bundle, &id).await;
     assert_eq!(failed.observed_at, observed_at);
@@ -805,24 +535,18 @@ async fn transient_failure_preserves_observation_and_revocation_erases_it() {
         Some("unavailable")
     );
     assert_eq!(failed.windows.len(), 2);
-    let receipt = bundle.admin_provider().request_refresh(&id).await.unwrap();
-    assert!(receipt.request_generation > 0);
-    assert!(
-        store.read(std::slice::from_ref(&id)).await.unwrap()[0]
-            .plan
-            .next_attempt_at
-            > SystemTime::now()
-    );
+    assert!(bundle.admin_provider().refresh_quota(&id).await.is_err());
+    assert_eq!(server.received_requests().await.unwrap().len(), 1);
     server.reset().await;
     Mock::given(method("GET"))
         .respond_with(ResponseTemplate::new(403))
         .mount(&server)
         .await;
-    store.due_now(&id);
+    bundle.admin_provider().forget(&id);
     cycle(&worker).await;
     let revoked = quota(&bundle, &id).await;
     assert!(revoked.windows.is_empty());
-    assert!(revoked.upstream.unwrap().node.is_none());
+    assert!(revoked.upstream.unwrap().observed_at.is_none());
 }
 
 async fn wait_for_request(server: &MockServer) {
@@ -863,7 +587,7 @@ async fn disabling_during_an_in_flight_request_fences_the_late_observation() {
     running.await.unwrap();
     assert!(
         store
-            .read(std::slice::from_ref(&id))
+            .get_quotas(std::slice::from_ref(&id))
             .await
             .unwrap()
             .is_empty()
@@ -872,7 +596,7 @@ async fn disabling_during_an_in_flight_request_fences_the_late_observation() {
 }
 
 #[tokio::test]
-async fn cancellation_leaves_the_persisted_claim_for_restart_recovery() {
+async fn cancellation_releases_refresh_and_restart_can_retry() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
         .respond_with(
@@ -898,14 +622,29 @@ async fn cancellation_leaves_the_persisted_claim_for_restart_recovery() {
         .await
         .unwrap()
         .unwrap();
-    let record = store
-        .read(std::slice::from_ref(&id))
-        .await
-        .unwrap()
-        .remove(0);
-    assert!(record.plan.claimed_until.is_some());
-    assert_eq!(record.plan.completed_generation, 0);
-    assert!(record.snapshot.is_none());
+    assert!(
+        store
+            .get_quotas(std::slice::from_ref(&id))
+            .await
+            .unwrap()
+            .is_empty()
+    );
+    server.reset().await;
+    Mock::given(method("GET"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(peer_document()))
+        .mount(&server)
+        .await;
+    let restarted = peer_fixture(_config.config.clone(), store).await;
+    assert!(
+        restarted
+            .admin_provider()
+            .refresh_quota(&id)
+            .await
+            .unwrap()
+            .upstream
+            .unwrap()
+            .discovered
+    );
 }
 
 #[tokio::test]
@@ -915,7 +654,7 @@ async fn invalid_or_redirected_responses_never_replace_the_last_valid_snapshot()
         .respond_with(ResponseTemplate::new(200).set_body_json(peer_document()))
         .mount(&server)
         .await;
-    let (mut bundle, _, store, id, _config) = fixture(&server).await;
+    let (mut bundle, _, _store, id, _config) = fixture(&server).await;
     let worker = worker(&mut bundle);
     cycle(&worker).await;
     let observed_at = quota(&bundle, &id).await.observed_at;
@@ -963,7 +702,7 @@ async fn invalid_or_redirected_responses_never_replace_the_last_valid_snapshot()
             .expect(0)
             .mount(&server)
             .await;
-        store.due_now(&id);
+        bundle.admin_provider().forget(&id);
         cycle(&worker).await;
         let quota = quota(&bundle, &id).await;
         assert_eq!(quota.observed_at, observed_at);
@@ -1056,9 +795,7 @@ async fn lists_reuse_versioned_summaries_and_details_keep_node_windows() {
         account: &account,
         rolling_usage: None,
     }];
-    let read_count = store
-        .snapshot_reads
-        .load(std::sync::atomic::Ordering::Relaxed);
+    let read_count = store.quota_reads();
     for _ in 0..3 {
         let summary = bundle
             .admin_provider()
@@ -1088,12 +825,7 @@ async fn lists_reuse_versioned_summaries_and_details_keep_node_windows() {
         assert!(single.upstream.as_ref().unwrap().discovered);
         cycle(&worker).await;
     }
-    assert_eq!(
-        store
-            .snapshot_reads
-            .load(std::sync::atomic::Ordering::Relaxed),
-        read_count
-    );
+    assert_eq!(store.quota_reads(), read_count);
     let detail = quota(&bundle, &id).await;
     assert_eq!(detail.windows.len(), 3);
     assert_eq!(
@@ -1106,7 +838,7 @@ async fn lists_reuse_versioned_summaries_and_details_keep_node_windows() {
         Some("node-one")
     );
 
-    let restored = peer_fixture(config.config.clone(), accounts, store.clone()).await;
+    let restored = peer_fixture(config.config.clone(), accounts).await;
     let summary = restored
         .admin_provider()
         .read_quotas(&requests)
@@ -1115,22 +847,17 @@ async fn lists_reuse_versioned_summaries_and_details_keep_node_windows() {
         .unwrap()
         .unwrap();
     assert_eq!(summary.windows.len(), 2);
-    let read_count = store
-        .snapshot_reads
-        .load(std::sync::atomic::Ordering::Relaxed);
-    {
-        let mut records = store.records.lock().unwrap();
-        let record = records.get_mut(&id).unwrap();
-        record.plan.completed_generation += 1;
-        let mut snapshot = record
-            .snapshot
-            .as_ref()
-            .unwrap()
-            .expose_to_provider()
-            .clone();
-        snapshot.get_mut("node").unwrap()["name"] = json!("更新后的节点");
-        record.snapshot = Some(OpaqueProviderData::new(snapshot));
-    }
+    let mut changed = store
+        .get_quotas(std::slice::from_ref(&id))
+        .await
+        .unwrap()
+        .remove(0);
+    let mut document = changed.quota.expose_to_provider().clone();
+    document.get_mut("pool").unwrap()["plans"][0]["name"] = json!("Team");
+    changed.quota = OpaqueProviderData::new(document);
+    changed.observed_at = SystemTime::now();
+    store.compare_and_swap_quota(changed).await.unwrap();
+    let read_count = store.quota_reads();
     let summary = restored
         .admin_provider()
         .read_quotas(&requests)
@@ -1138,19 +865,20 @@ async fn lists_reuse_versioned_summaries_and_details_keep_node_windows() {
         .pop()
         .unwrap()
         .unwrap();
-    assert_eq!(summary.upstream.unwrap().node.unwrap().name, "更新后的节点");
     assert_eq!(
-        store
-            .snapshot_reads
-            .load(std::sync::atomic::Ordering::Relaxed),
-        read_count + 1
+        summary.upstream.unwrap().pool.unwrap().plans[0].name,
+        "Team"
     );
-    {
-        let mut records = store.records.lock().unwrap();
-        let record = records.get_mut(&id).unwrap();
-        record.plan.last_error = Some(UpstreamInfoFailure::Unauthorized);
-        record.snapshot = None;
-    }
+    assert_eq!(store.quota_reads(), read_count + 1);
+    let mut cleared = store
+        .get_quotas(std::slice::from_ref(&id))
+        .await
+        .unwrap()
+        .remove(0);
+    cleared.quota = OpaqueProviderData::new(Default::default());
+    cleared.observed_at = SystemTime::now();
+    store.compare_and_swap_quota(cleared).await.unwrap();
+    let read_count = store.quota_reads();
     let summary = restored
         .admin_provider()
         .read_quotas(&requests)
@@ -1160,14 +888,9 @@ async fn lists_reuse_versioned_summaries_and_details_keep_node_windows() {
         .unwrap();
     assert!(summary.windows.is_empty());
     let info = summary.upstream.unwrap();
-    assert!(info.discovered);
-    assert!(info.node.is_none());
-    assert_eq!(
-        store
-            .snapshot_reads
-            .load(std::sync::atomic::Ordering::Relaxed),
-        read_count + 1
-    );
+    assert!(!info.discovered);
+    assert!(info.observed_at.is_none());
+    assert_eq!(store.quota_reads(), read_count + 1);
 }
 
 #[tokio::test]
@@ -1185,15 +908,16 @@ async fn ordinary_api_upstreams_remain_undiscovered_and_keep_the_detection_backo
     cycle(&worker).await;
     let info = quota(&bundle, &id).await.upstream.unwrap();
     assert!(!info.discovered);
-    assert!(info.node.is_none());
+    assert!(info.observed_at.is_none());
     assert_eq!(info.last_error.as_deref(), Some("unsupported"));
-    let plan = store
-        .read_plans(std::slice::from_ref(&id))
-        .await
-        .unwrap()
-        .pop()
-        .unwrap();
-    assert!(plan.next_attempt_at > SystemTime::now() + Duration::from_secs(29 * 60));
+    assert!(bundle.admin_provider().refresh_quota(&id).await.is_err());
+    assert!(
+        store
+            .get_quotas(std::slice::from_ref(&id))
+            .await
+            .unwrap()
+            .is_empty()
+    );
 }
 
 #[tokio::test]
@@ -1218,18 +942,20 @@ async fn cold_lists_bound_full_snapshot_batches_and_reuse_every_hydrated_summary
         let account = accounts.account(id.as_str()).unwrap();
         let connection = UpstreamConnection::for_account(&account);
         let now = SystemTime::now();
-        store.reconcile(&connection, true, now).await.unwrap();
         let mut document = peer_document();
-        document["node"]["name"] = json!(format!("peer-{index}"));
-        {
-            let mut persisted = store.records.lock().unwrap();
-            let record = persisted.get_mut(&id).unwrap();
-            record.plan.completed_generation = record.plan.request_generation;
-            record.plan.last_success_at = Some(now);
-            record.snapshot = Some(OpaqueProviderData::new(
-                document.as_object().unwrap().clone(),
-            ));
-        }
+        document["usage"]["data"]["daily"]["used"] = json!(index.to_string());
+        store
+            .compare_and_swap_quota(QuotaObservation {
+                expected_connection: Some(connection),
+                account_id: id.clone(),
+                expected_revision: account.revision(),
+                quota: OpaqueProviderData::new(document.as_object().unwrap().clone()),
+                plan_type: None,
+                observed_at: now,
+                state: QuotaState::unknown(),
+            })
+            .await
+            .unwrap();
         records.push(account_record(&account));
     }
     let requests = records
@@ -1246,42 +972,31 @@ async fn cold_lists_bound_full_snapshot_batches_and_reuse_every_hydrated_summary
             let quota = quota.unwrap();
             assert_eq!(quota.windows.len(), 2);
             assert_eq!(
-                quota.upstream.unwrap().node.unwrap().name,
-                format!("peer-{index}")
+                quota.windows[0]
+                    .upstream
+                    .as_ref()
+                    .unwrap()
+                    .amount
+                    .as_ref()
+                    .unwrap()
+                    .used,
+                index.to_string()
             );
         }
-        assert_eq!(
-            store
-                .snapshot_reads
-                .load(std::sync::atomic::Ordering::Relaxed),
-            records.len()
-        );
+        assert_eq!(store.quota_reads(), records.len() / 2);
     }
-    assert!(
-        store
-            .largest_snapshot_read
-            .load(std::sync::atomic::Ordering::Relaxed)
-            <= 2
-    );
+    assert!(store.largest_quota_read() <= 2);
 
-    {
-        let mut persisted = store.records.lock().unwrap();
-        for account in [&records[0], records.last().unwrap()] {
-            let record = persisted
-                .get_mut(&ProviderAccountId::new(account.id.clone()).unwrap())
-                .unwrap();
-            record.plan.request_generation += 1;
-            record.plan.completed_generation = record.plan.request_generation;
-        }
+    for account in [&records[0], records.last().unwrap()] {
+        let id = ProviderAccountId::new(account.id.clone()).unwrap();
+        let mut observation = store.get_quotas(&[id]).await.unwrap().remove(0);
+        observation.observed_at = SystemTime::now();
+        store.compare_and_swap_quota(observation).await.unwrap();
     }
+    let read_count = store.quota_reads();
     let quotas = bundle.admin_provider().read_quotas(&requests).await;
     assert!(quotas.into_iter().all(|quota| quota.is_ok()));
-    assert_eq!(
-        store
-            .snapshot_reads
-            .load(std::sync::atomic::Ordering::Relaxed),
-        records.len() + 2
-    );
+    assert_eq!(store.quota_reads(), read_count + 1);
 }
 
 async fn execute_peer_request(
@@ -1381,7 +1096,6 @@ impl PeerFixture {
 async fn peer_fixture(
     config: provider_openai::OpenAiConfig,
     accounts: Arc<MemoryAccountStore>,
-    store: Arc<MemoryUpstreamInfoStore>,
 ) -> PeerFixture {
     let reader = Arc::new(gateway_core::account::UpstreamInfoReader::default());
     let cooldowns = Arc::new(MemoryCooldownPort::new());
@@ -1409,7 +1123,6 @@ async fn peer_fixture(
             .unwrap();
     let peer = gateway_admin::initialize_peer_upstream(
         accounts.clone(),
-        store,
         &registry,
         Arc::new(gateway_host::peer::HttpPeerTransport::with_client_builder(
             provider_openai::build_reqwest_client_with_custom_ca,

@@ -109,14 +109,8 @@ impl PeerLinkService for DefaultPeerLinkService {
         if !sharing.enabled || key.groups.is_empty() {
             return Err(PeerLinkError::Forbidden);
         }
-        let node = self
-            .keys
-            .peer_node_identity()
-            .await
-            .map_err(|error| map_store_error(error, "peer node"))?;
         let now = Utc::now();
         let mut result = PeerLinkExport {
-            node,
             observed_at: now,
             expires_at: now + TimeDelta::minutes(5),
             budget_access: key

@@ -74,9 +74,6 @@ pub(super) fn parse(
     let expires = timestamp(&peer.expires_at).ok_or(UpstreamInfoFailure::InvalidResponse)?;
     if peer.object != OBJECT
         || peer.schema_version != SCHEMA_VERSION
-        || !valid_text(&peer.node.id, 256)
-        || !valid_text(&peer.node.name, 256)
-        || !valid_text(&peer.node.software, 128)
         || observed > now + Duration::from_secs(60)
         || now.duration_since(observed).unwrap_or_default() > MAX_AGE
         || expires <= observed

@@ -385,7 +385,7 @@ pub(super) async fn notify_account_facts_changed(
     if let Some(peer) = peer {
         for id in ids {
             if let Err(error) = peer.account_changed(id).await {
-                tracing::warn!(account_id = %id, error = %error, "upstream information plan reconciliation failed");
+                tracing::warn!(account_id = %id, error = %error, "upstream information cache invalidation failed");
             }
         }
     }

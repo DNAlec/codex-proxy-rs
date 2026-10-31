@@ -730,20 +730,6 @@ impl PgAdminClientKeyStore {
 
 #[async_trait]
 impl ClientKeyStore for PgAdminClientKeyStore {
-    async fn peer_node_identity(
-        &self,
-    ) -> AdminStoreResult<gateway_admin::model::peer_link::PeerNodeIdentity> {
-        let (id, name) = sqlx::query_as::<_, (String, String)>(
-            "select id::text, name from peer_node where singleton",
-        )
-        .fetch_one(&self.keys.pool)
-        .await
-        .map_err(|source| {
-            admin_store_error("peer node", postgres_unavailable("load peer node", source))
-        })?;
-        Ok(gateway_admin::model::peer_link::PeerNodeIdentity { id, name })
-    }
-
     async fn update_client_key_budget_limits(
         &self,
         command: gateway_admin::model::client_keys::UpdateClientKeyBudgetLimits,

@@ -359,16 +359,6 @@ pub trait AuthStore: Send + Sync {
 /// Client API Key 资料读取与管理写入
 #[async_trait]
 pub trait ClientKeyStore: Send + Sync {
-    async fn peer_node_identity(
-        &self,
-    ) -> AdminStoreResult<crate::model::peer_link::PeerNodeIdentity> {
-        Err(AdminStoreError::new(
-            AdminStoreErrorKind::Unavailable,
-            "peer node",
-            "peer node is unavailable",
-        ))
-    }
-
     /// 按已验证的 ID 读取资料，不读取完整明文 Key
     async fn get_client_key(
         &self,

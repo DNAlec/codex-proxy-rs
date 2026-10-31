@@ -26,18 +26,11 @@ impl PeerUpstreamService for TestPeerInfo {
         Ok(())
     }
     fn forget(&self, _: &ProviderAccountId) {}
-    async fn request_refresh(
+    async fn refresh_quota(
         &self,
-        account_id: &ProviderAccountId,
-    ) -> Result<gateway_admin::model::upstream_info::UpstreamRefreshReceipt, StoreError> {
-        Ok(
-            gateway_admin::model::upstream_info::UpstreamRefreshReceipt {
-                account_id: account_id.as_str().to_owned(),
-                connection_revision: "connection-7".to_owned(),
-                request_generation: 7,
-                state: gateway_admin::model::upstream_info::UpstreamSyncState::Queued,
-            },
-        )
+        _: &ProviderAccountId,
+    ) -> Result<ProviderQuota, ProviderAdminError> {
+        Ok(self.0.lock().unwrap().clone().unwrap_or_default())
     }
     async fn read_quota(&self, _: &ProviderAccountId) -> Result<Option<ProviderQuota>, StoreError> {
         Ok(self.0.lock().unwrap().clone())

@@ -110,14 +110,6 @@ async fn peer_sharing_persists_across_reads_and_cannot_lose_its_group_scope() {
         .await
         .unwrap();
     assert_eq!(snapshot.client_api_keys[0].peer_sharing, sharing);
-    let first_identity = store.peer_node_identity().await.unwrap();
-    assert_eq!(
-        first_identity,
-        PgAdminClientKeyStore::new(database.pool.clone())
-            .peer_node_identity()
-            .await
-            .unwrap()
-    );
     let mut update = UpdateClientKey {
         peer_sharing: None,
         request_profile_override_updates: Default::default(),

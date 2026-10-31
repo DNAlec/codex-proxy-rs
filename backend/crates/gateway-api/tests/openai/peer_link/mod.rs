@@ -243,6 +243,7 @@ async fn exports_scoped_observations_even_when_the_key_budget_is_exhausted_witho
     assert_eq!(response.status(), StatusCode::OK);
     let body = response_json(response).await;
     assert_eq!(body["object"], "cpr.peer");
+    assert_eq!(body["schema_version"], 1);
     assert_eq!(body["usage"]["data"]["daily"]["remaining"], "0");
     assert_eq!(body["usage"]["data"]["allowed"], false);
     assert_eq!(body["usage"]["data"]["daily"]["limit_reached"], true);

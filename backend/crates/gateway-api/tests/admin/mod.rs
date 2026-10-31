@@ -1011,15 +1011,6 @@ fn mutation(
 
 #[async_trait]
 impl ClientKeyStore for MemoryClientKeyStore {
-    async fn peer_node_identity(
-        &self,
-    ) -> AdminStoreResult<gateway_admin::model::peer_link::PeerNodeIdentity> {
-        Ok(gateway_admin::model::peer_link::PeerNodeIdentity {
-            id: "test-peer-node".to_owned(),
-            name: "测试节点".to_owned(),
-        })
-    }
-
     async fn update_client_key_budget_limits(
         &self,
         _: gateway_admin::model::client_keys::UpdateClientKeyBudgetLimits,

@@ -7,12 +7,11 @@ use crate::model::{
         ProviderQuota, ProviderQuotaWindow, ProviderQuotaWindowRole, QuotaLocalUsageAttribution,
     },
     upstream_info::{
-        ProviderUpstreamInfo, UpstreamNode, UpstreamPlanCount, UpstreamPool, UpstreamPoolStates,
-        UpstreamQuotaAmount, UpstreamQuotaWindow, UpstreamRefreshReceipt, UpstreamSync,
-        UpstreamSyncState,
+        ProviderUpstreamInfo, UpstreamPlanCount, UpstreamPool, UpstreamPoolStates,
+        UpstreamQuotaAmount, UpstreamQuotaWindow,
     },
 };
-use gateway_core::account::{QuotaAccessState, UpstreamInfoPlan, UpstreamInfoRecord};
+use gateway_core::account::{QuotaAccessState, UpstreamConnection, UpstreamInfoFailure};
 use gateway_protocol::peer::{
     PeerComponentStatus, PeerLink, PeerPoolDisclosure, PeerQuotaDisclosure,
 };
@@ -20,14 +19,10 @@ use gateway_protocol::peer::{
 use super::{PeerInfoService, quota, snapshot};
 
 impl PeerInfoService {
-    pub(crate) fn project(record: &UpstreamInfoRecord, now: SystemTime) -> ProviderQuota {
-        let peer = record.snapshot.as_ref().and_then(snapshot::decode);
-        Self::project_peer(&record.plan, peer.as_ref(), now)
-    }
-
     pub(super) fn project_peer(
-        plan: &UpstreamInfoPlan,
+        connection: &UpstreamConnection,
         peer: Option<&PeerLink>,
+        last_error: Option<UpstreamInfoFailure>,
         now: SystemTime,
     ) -> ProviderQuota {
         let observed_at = peer
@@ -37,17 +32,11 @@ impl PeerInfoService {
             !snapshot::component_fresh(Some(&peer.observed_at), Some(&peer.expires_at), now)
         });
         let info = ProviderUpstreamInfo {
-            discovered: plan.last_success_at.is_some(),
-            node: peer.as_ref().map(|peer| UpstreamNode {
-                id: peer.node.id.clone(),
-                name: peer.node.name.clone(),
-                software: peer.node.software.clone(),
-            }),
+            discovered: peer.is_some(),
             observed_at,
             stale,
-            connection_revision: plan.connection.revision.clone(),
-            sync: sync_state(plan, now),
-            last_error: plan.last_error.map(|error| error.as_str().to_owned()),
+            connection_revision: connection.revision.clone(),
+            last_error: last_error.map(|error| error.as_str().to_owned()),
             pool: peer
                 .as_ref()
                 .filter(|peer| peer.pool.disclosure == PeerPoolDisclosure::Summary)
@@ -212,28 +201,5 @@ impl PeerInfoService {
             limit_reached: false,
             provider_data: None,
         }
-    }
-
-    pub(crate) fn receipt(record: &UpstreamInfoPlan) -> UpstreamRefreshReceipt {
-        UpstreamRefreshReceipt {
-            account_id: record.connection.account_id.as_str().to_owned(),
-            connection_revision: record.connection.revision.clone(),
-            request_generation: record.request_generation,
-            state: sync_state(record, SystemTime::now()).state,
-        }
-    }
-}
-
-fn sync_state(record: &UpstreamInfoPlan, now: SystemTime) -> UpstreamSync {
-    UpstreamSync {
-        state: if record.claimed_until.is_some_and(|expiry| expiry > now) {
-            UpstreamSyncState::Running
-        } else if record.request_generation > record.completed_generation {
-            UpstreamSyncState::Queued
-        } else {
-            UpstreamSyncState::Idle
-        },
-        request_generation: record.request_generation,
-        completed_generation: record.completed_generation,
     }
 }

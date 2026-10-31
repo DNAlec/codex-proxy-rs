@@ -26,5 +26,5 @@ pub use model::*;
 pub(crate) use selection::smart_score;
 pub use selection::*;
 pub use smart_scheduling::{SmartSchedulingConfig, SmartSchedulingConfigError};
-pub use store::{ProviderAccountStore, UpstreamInfoStore};
+pub use store::ProviderAccountStore;
 pub use upstream::*;

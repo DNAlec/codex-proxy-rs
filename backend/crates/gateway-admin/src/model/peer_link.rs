@@ -13,15 +13,8 @@ pub struct PeerLinkLimits {
     pub max_response_bytes: usize,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct PeerNodeIdentity {
-    pub id: String,
-    pub name: String,
-}
-
 #[derive(Debug, Clone, PartialEq)]
 pub struct PeerLinkExport {
-    pub node: PeerNodeIdentity,
     pub observed_at: DateTime<Utc>,
     pub expires_at: DateTime<Utc>,
     pub budget: ClientBudgetStatus,

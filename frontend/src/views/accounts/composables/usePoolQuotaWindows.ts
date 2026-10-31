@@ -8,10 +8,9 @@ export function usePoolQuotaWindows(account: () => Account) {
   const request = useRequestState()
 
   watch([
-    () => account().id,
+    () => account(),
     () => account().upstream?.discovered,
     () => account().upstream?.connectionRevision,
-    () => account().upstream?.sync.completedGeneration,
     () => account().upstream?.observedAt,
     () => account().upstream?.stale,
   ], async () => {

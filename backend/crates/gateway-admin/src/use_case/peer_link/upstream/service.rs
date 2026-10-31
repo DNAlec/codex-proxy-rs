@@ -1,108 +1,68 @@
-//! 互联后台同步、额度恢复与 Smart 排序观测
+//! 互联额度读取与后台刷新，复用账号额度存储和 Host Worker 生命周期
 
-use std::{
-    collections::{BTreeMap, HashMap},
-    sync::{Arc, RwLock},
-    time::{Duration, SystemTime},
+use super::{refresh::RefreshState, scheduling::SchedulingObservation, snapshot};
+use crate::{
+    model::provider_credentials::ProviderQuota,
+    ports::{
+        peer::{PeerConnection, PeerTransport},
+        provider::{ProviderAdmin, ProviderAdminRegistry},
+    },
 };
-
-use futures::{StreamExt as _, TryStreamExt as _, stream};
+use futures::{StreamExt as _, stream};
 use gateway_core::{
     account::{
         LoadedCredential, ProviderAccount, ProviderAccountId, ProviderAccountStore,
-        UpstreamConnection, UpstreamInfoClaim, UpstreamInfoCompletion, UpstreamInfoFailure,
-        UpstreamInfoPlan, UpstreamInfoRecord, UpstreamInfoSource, UpstreamInfoStore,
-        UpstreamSchedulingSignal,
+        UpstreamConnection, UpstreamInfoSource, UpstreamSchedulingSignal,
     },
     error::{StoreError, StoreErrorKind},
     routing::ProviderKind,
     task::WorkerCycleContext,
 };
-
-use crate::model::provider_credentials::ProviderQuota;
 use gateway_protocol::peer::PeerLink;
-
-use crate::ports::{
-    peer::{PeerConnection, PeerTransport},
-    provider::{ProviderAdmin, ProviderAdminRegistry},
+use std::{
+    collections::{BTreeMap, HashMap},
+    sync::{Arc, Mutex, RwLock},
+    time::SystemTime,
 };
 
-use super::{quota, scheduling::SchedulingObservation, snapshot};
-
-const BATCH_SIZE: u32 = 100;
-const FETCH_BATCH: u32 = 20;
-const SNAPSHOT_READ_BATCH: usize = 2;
-const CONCURRENCY: usize = 4;
-const MINIMUM_INTERVAL: Duration = Duration::from_secs(15);
-
-type CachedSummary = (UpstreamInfoPlan, Option<Arc<PeerLink>>);
-
-struct CachedObservation {
-    connection: UpstreamConnection,
-    completed_generation: u64,
-    last_success_at: Option<SystemTime>,
-    checked_at: SystemTime,
-    scheduling: Option<Arc<SchedulingObservation>>,
-    summary: Option<Arc<PeerLink>>,
-}
-
-impl CachedObservation {
-    fn new(
-        plan: &UpstreamInfoPlan,
-        scheduling: Option<Arc<SchedulingObservation>>,
-        summary: Option<Arc<PeerLink>>,
-        now: SystemTime,
-    ) -> Self {
-        Self {
-            connection: plan.connection.clone(),
-            completed_generation: plan.completed_generation,
-            last_success_at: plan.last_success_at,
-            checked_at: now,
-            scheduling,
-            summary,
-        }
-    }
-
-    fn matches(&self, plan: &UpstreamInfoPlan) -> bool {
-        self.connection == plan.connection
-            && self.completed_generation == plan.completed_generation
-            && self.last_success_at == plan.last_success_at
-            // 周期刷新不增加请求代次，撤销授权仍须立即丢弃此前的观测
-            && (plan.last_error != Some(UpstreamInfoFailure::Unauthorized) || self.summary.is_none())
-    }
+pub(super) struct CachedObservation {
+    pub connection: UpstreamConnection,
+    pub observed_at: Option<SystemTime>,
+    pub checked_at: SystemTime,
+    pub scheduling: Option<Arc<SchedulingObservation>>,
+    pub summary: Option<Arc<PeerLink>>,
 }
 
 pub(crate) struct PeerInfoService {
-    accounts: Arc<dyn ProviderAccountStore>,
-    store: Arc<dyn UpstreamInfoStore>,
+    pub(super) accounts: Arc<dyn ProviderAccountStore>,
     providers: BTreeMap<ProviderKind, Arc<dyn ProviderAdmin>>,
-    transport: Arc<dyn PeerTransport>,
-    cursors: tokio::sync::Mutex<BTreeMap<ProviderKind, Option<ProviderAccountId>>>,
-    cache_refresh: tokio::sync::Mutex<()>,
-    observations: RwLock<HashMap<ProviderAccountId, CachedObservation>>,
+    pub(super) transport: Arc<dyn PeerTransport>,
+    pub(super) attempts: Mutex<HashMap<ProviderAccountId, Arc<tokio::sync::Mutex<RefreshState>>>>,
+    cursors: Mutex<BTreeMap<ProviderKind, usize>>,
+    pub(super) cache_refresh: tokio::sync::Mutex<()>,
+    pub(super) observations: RwLock<HashMap<ProviderAccountId, CachedObservation>>,
 }
 
 impl PeerInfoService {
     pub(crate) fn new(
         accounts: Arc<dyn ProviderAccountStore>,
-        store: Arc<dyn UpstreamInfoStore>,
         providers: &ProviderAdminRegistry,
         transport: Arc<dyn PeerTransport>,
     ) -> Self {
         Self {
             accounts,
-            store,
             providers: providers.registered(),
             transport,
-            cursors: tokio::sync::Mutex::new(BTreeMap::new()),
+            attempts: Mutex::default(),
+            cursors: Mutex::default(),
             cache_refresh: tokio::sync::Mutex::new(()),
-            observations: RwLock::new(HashMap::new()),
+            observations: RwLock::default(),
         }
     }
 
     pub(crate) async fn account_changed(&self, id: &ProviderAccountId) -> Result<(), StoreError> {
-        let loaded = self.accounts.load_current_credential(id).await?;
-        self.reconcile(&loaded).await
+        self.forget(id);
+        Ok(())
     }
 
     pub(crate) fn forget(&self, id: &ProviderAccountId) {
@@ -112,84 +72,35 @@ impl PeerInfoService {
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .remove(id);
         drop(previous);
-    }
-
-    async fn reconcile(&self, loaded: &LoadedCredential) -> Result<(), StoreError> {
-        let connection = UpstreamConnection::for_account(&loaded.account);
-        let enabled = self.connection(loaded).is_some();
-        self.store
-            .reconcile(
-                &connection,
-                enabled && loaded.account.enabled(),
-                SystemTime::now(),
-            )
-            .await?;
-        let _refresh = self.cache_refresh.lock().await;
-        let mut observations = self
-            .observations
-            .write()
+        // 正在执行的请求继续持有同一把锁，结果仍由数据库版本校验决定是否接纳
+        let mut attempts = self
+            .attempts
+            .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let previous = if !enabled
-            || !loaded.account.enabled()
-            || observations
-                .get(loaded.account.id())
-                .is_some_and(|cached| cached.connection != connection)
+        if attempts
+            .get(id)
+            .is_some_and(|state| Arc::strong_count(state) == 1)
         {
-            observations.remove(loaded.account.id())
-        } else {
-            None
-        };
-        drop(observations);
-        drop(previous);
-        Ok(())
-    }
-
-    pub(crate) async fn request_refresh(
-        &self,
-        id: &ProviderAccountId,
-    ) -> Result<UpstreamInfoPlan, StoreError> {
-        let loaded = self.accounts.load_current_credential(id).await?;
-        if self.connection(&loaded).is_none() {
-            return Err(StoreError::new(StoreErrorKind::InvalidData));
+            attempts.remove(id);
         }
-        self.reconcile(&loaded).await?;
-        self.store
-            .request_refresh(
-                &UpstreamConnection::for_account(&loaded.account),
-                SystemTime::now(),
-                MINIMUM_INTERVAL,
-            )
-            .await
     }
 
-    pub(crate) async fn read_quota(
-        &self,
-        id: &ProviderAccountId,
-    ) -> Result<Option<ProviderQuota>, StoreError> {
-        let Some(connection) = self.current_connection(id).await? else {
-            return Ok(None);
-        };
-        Ok(self
-            .read(std::slice::from_ref(id))
-            .await?
-            .iter()
-            .find(|record| record.plan.connection == connection)
-            .map(|record| Self::project(record, SystemTime::now())))
+    pub(super) fn connection(&self, loaded: &LoadedCredential) -> Option<PeerConnection> {
+        self.providers
+            .get(loaded.account.provider())?
+            .peer_connection(loaded)
+            .ok()
+            .flatten()
     }
 
-    pub(crate) async fn read_summary(
-        &self,
-        id: &ProviderAccountId,
-    ) -> Result<Option<ProviderQuota>, StoreError> {
-        let Some(connection) = self.current_connection(id).await? else {
-            return Ok(None);
-        };
-        Ok(self
-            .read_summaries(std::slice::from_ref(id))
-            .await?
-            .into_iter()
-            .find(|(current, _)| *current == connection)
-            .map(|(_, quota)| quota))
+    fn supported(&self, account: &ProviderAccount) -> bool {
+        account.enabled()
+            && self
+                .providers
+                .get(account.provider())
+                .is_some_and(|provider| {
+                    provider.supports_peer_connection(account.authentication_kind())
+                })
     }
 
     async fn current_connection(
@@ -201,29 +112,120 @@ impl PeerInfoService {
             .get_account(id)
             .await?
             .ok_or_else(|| StoreError::new(StoreErrorKind::InvalidData))?;
-        if !self
-            .providers
-            .get(account.provider())
-            .is_some_and(|provider| {
-                provider.supports_peer_connection(account.authentication_kind())
-            })
-        {
-            return Ok(None);
-        }
-        Ok(Some(UpstreamConnection::for_account(&account)))
+        Ok(self
+            .supported(&account)
+            .then(|| UpstreamConnection::for_account(&account)))
     }
 
-    pub(crate) async fn read(
+    pub(crate) async fn read_quota(
         &self,
-        ids: &[ProviderAccountId],
-    ) -> Result<Vec<UpstreamInfoRecord>, StoreError> {
-        self.store.read(ids).await
+        id: &ProviderAccountId,
+    ) -> Result<Option<ProviderQuota>, StoreError> {
+        let Some(connection) = self.current_connection(id).await? else {
+            return Ok(None);
+        };
+        let observation = self
+            .accounts
+            .get_quotas(std::slice::from_ref(id))
+            .await?
+            .into_iter()
+            .find(|value| value.expected_revision == connection.credential_revision);
+        let peer = observation
+            .as_ref()
+            .and_then(|value| snapshot::decode(&value.quota));
+        if self.current_connection(id).await?.as_ref() != Some(&connection) {
+            return Ok(None);
+        }
+        Ok(Some(Self::project_peer(
+            &connection,
+            peer.as_ref(),
+            self.last_error(&connection),
+            SystemTime::now(),
+        )))
+    }
+
+    pub(crate) async fn read_summary(
+        &self,
+        id: &ProviderAccountId,
+    ) -> Result<Option<ProviderQuota>, StoreError> {
+        let Some(connection) = self.current_connection(id).await? else {
+            return Ok(None);
+        };
+        Ok(self
+            .read_summaries(&[connection])
+            .await?
+            .into_iter()
+            .next()
+            .map(|(_, quota)| quota))
     }
 
     pub(super) async fn synchronize(&self, context: &WorkerCycleContext) -> Result<(), StoreError> {
+        let mut failure = None;
+        let mut active = std::collections::HashSet::new();
+        for provider in self.providers.keys() {
+            if context.cancellation().is_cancelled() {
+                break;
+            }
+            let accounts = match self.accounts.list_for_provider(provider).await {
+                Ok(accounts) => accounts,
+                Err(error) => {
+                    failure.get_or_insert(error);
+                    continue;
+                }
+            };
+            let connections = accounts
+                .iter()
+                .filter(|account| self.supported(account))
+                .map(UpstreamConnection::for_account)
+                .collect::<Vec<_>>();
+            active.extend(
+                connections
+                    .iter()
+                    .map(|connection| connection.account_id.clone()),
+            );
+            let connections = {
+                let mut cursors = self
+                    .cursors
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner);
+                let offset = cursors.entry(provider.clone()).or_default();
+                if *offset >= connections.len() {
+                    *offset = 0;
+                }
+                let batch = connections
+                    .iter()
+                    .skip(*offset)
+                    .take(100)
+                    .cloned()
+                    .collect::<Vec<_>>();
+                *offset += batch.len();
+                batch
+            };
+            if let Err(error) = self.read_summaries(&connections).await {
+                failure.get_or_insert(error);
+                continue;
+            }
+            // 每轮有界并发，运行期到期记录在请求开始时预留，取消后可按普通重试恢复
+            let pending = connections
+                .into_iter()
+                .filter(|connection| self.refresh_due(connection))
+                .take(100)
+                .collect::<Vec<_>>();
+            stream::iter(pending).map(|connection| async move {
+                if let Err(error) = self.refresh(&connection.account_id, false).await {
+                    tracing::warn!(account_id = %connection.account_id, error = %error, "Upstream quota refresh failed");
+                }
+            }).buffer_unordered(4).collect::<Vec<_>>().await;
+        }
+        // 查询失败时保留该轮无法核对的账号，避免错误风暴清空所有节流记录
+        if failure.is_none() && !context.cancellation().is_cancelled() {
+            self.attempts
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .retain(|id, state| active.contains(id) || Arc::strong_count(state) > 1);
+        }
         let now = SystemTime::now();
-        // 过期观测保留轻量版本，避免每轮重读旧 JSON；长期未扫描到的账号释放缓存
-        let expired = self
+        let removed = self
             .observations
             .write()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
@@ -231,277 +233,21 @@ impl PeerInfoService {
                 now.duration_since(cached.checked_at).unwrap_or_default() > snapshot::MAX_AGE
             })
             .collect::<Vec<_>>();
-        drop(expired);
-        let mut failure = None;
-        for provider in self.providers.keys() {
-            if context.cancellation().is_cancelled() {
-                break;
-            }
-            // 一个 Provider 的账号读取失败不阻止其他 Provider 本轮同步
-            if let Err(error) = self.synchronize_provider(provider, context).await {
-                failure.get_or_insert(error);
-            }
-        }
+        drop(removed);
         failure.map_or(Ok(()), Err)
-    }
-
-    fn connection(&self, loaded: &LoadedCredential) -> Option<PeerConnection> {
-        self.providers
-            .get(loaded.account.provider())?
-            .peer_connection(loaded)
-            .ok()
-            .flatten()
-    }
-
-    async fn synchronize_provider(
-        &self,
-        provider: &ProviderKind,
-        context: &WorkerCycleContext,
-    ) -> Result<(), StoreError> {
-        let mut cursors = self.cursors.lock().await;
-        let cursor = cursors.entry(provider.clone()).or_default();
-        let candidates = self
-            .store
-            .list_candidates(
-                provider,
-                self.providers[provider].peer_authentication_kinds(),
-                cursor.as_ref(),
-                BATCH_SIZE,
-            )
-            .await?;
-        *cursor = if candidates.len() < BATCH_SIZE as usize {
-            None
-        } else {
-            candidates.last().map(|loaded| loaded.account.id().clone())
-        };
-        drop(cursors);
-        let mut ids = Vec::with_capacity(candidates.len());
-        for loaded in candidates {
-            if context.cancellation().is_cancelled() {
-                return Ok(());
-            }
-            match self.reconcile(&loaded).await {
-                Ok(()) => ids.push(loaded.account.id().clone()),
-                Err(error)
-                    if matches!(
-                        error.kind(),
-                        StoreErrorKind::Conflict | StoreErrorKind::InvalidData
-                    ) => {}
-                Err(error) => return Err(error),
-            }
-        }
-        self.refresh_cache(&ids).await?;
-        let pending = self
-            .store
-            .claim_due(
-                provider,
-                SystemTime::now(),
-                FETCH_BATCH,
-                Duration::from_secs(60),
-            )
-            .await?;
-        stream::iter(pending)
-            .map(|record| self.synchronize_one(record))
-            .buffer_unordered(CONCURRENCY)
-            .try_collect::<Vec<_>>()
-            .await?;
-        Ok(())
-    }
-
-    async fn synchronize_one(&self, claim: UpstreamInfoClaim) -> Result<(), StoreError> {
-        let record = claim.plan;
-        let loaded = match self
-            .accounts
-            .load_current_credential(&record.connection.account_id)
-            .await
-        {
-            Ok(loaded) => loaded,
-            Err(error)
-                if matches!(
-                    error.kind(),
-                    StoreErrorKind::Conflict | StoreErrorKind::InvalidData
-                ) =>
-            {
-                return Ok(());
-            }
-            Err(error) => return Err(error),
-        };
-        if UpstreamConnection::for_account(&loaded.account) != record.connection
-            || !loaded.account.enabled()
-        {
-            return self.reconcile(&loaded).await;
-        }
-        let Some(authentication) = self.connection(&loaded) else {
-            return self.reconcile(&loaded).await;
-        };
-        let started_at = SystemTime::now();
-        let (result, retry_after) =
-            match self.transport.fetch(&loaded.account, &authentication).await {
-                Ok(bytes) => (snapshot::parse(&bytes, SystemTime::now()), None),
-                Err(failure) => (Err(failure.kind), failure.retry_after),
-            };
-        let now = SystemTime::now();
-        let quota = result
-            .as_ref()
-            .ok()
-            .and_then(snapshot::decode)
-            .and_then(|peer| quota::observe(&peer, started_at, now));
-        let delay = match result {
-            Ok(_) => Duration::from_secs(240 + stable_jitter(loaded.account.id().as_str())),
-            Err(UpstreamInfoFailure::Unauthorized | UpstreamInfoFailure::Unsupported) => {
-                Duration::from_secs(30 * 60)
-            }
-            Err(_) => Duration::from_secs(
-                30_u64
-                    .saturating_mul(1_u64 << record.consecutive_failures.min(6))
-                    .min(30 * 60),
-            ),
-        }
-        .max(retry_after.unwrap_or_default());
-        let completion = UpstreamInfoCompletion {
-            connection: record.connection.clone(),
-            request_generation: record.request_generation,
-            claim_token: claim.claim_token,
-            completed_at: now,
-            next_attempt_at: now + delay,
-            result,
-            quota,
-        };
-        if self.store.complete(completion).await? {
-            self.refresh_cache(std::slice::from_ref(loaded.account.id()))
-                .await?;
-        }
-        Ok(())
-    }
-
-    pub(crate) async fn read_summaries(
-        &self,
-        ids: &[ProviderAccountId],
-    ) -> Result<Vec<(UpstreamConnection, ProviderQuota)>, StoreError> {
-        let plans = self.store.read_plans(ids).await?;
-        let cached = {
-            let observations = self
-                .observations
-                .read()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            plans
-                .into_iter()
-                .map(|plan| {
-                    let cached = observations.get(&plan.connection.account_id)?;
-                    cached
-                        .matches(&plan)
-                        .then(|| (plan, cached.summary.clone()))
-                })
-                .collect::<Option<Vec<_>>>()
-        };
-        let summaries = match cached {
-            Some(summaries) => summaries,
-            None => self.refresh_cache(ids).await?,
-        };
-        let now = SystemTime::now();
-        Ok(summaries
-            .into_iter()
-            .map(|(plan, summary)| {
-                let quota = Self::project_peer(&plan, summary.as_deref(), now);
-                (plan.connection, quota)
-            })
-            .collect())
-    }
-
-    async fn refresh_cache(
-        &self,
-        ids: &[ProviderAccountId],
-    ) -> Result<Vec<CachedSummary>, StoreError> {
-        let _refresh = self.cache_refresh.lock().await;
-        let mut plans = self.store.read_plans(ids).await?;
-        let now = SystemTime::now();
-        let mut changed = Vec::new();
-        let mut replaced = Vec::new();
-        {
-            let mut observations = self
-                .observations
-                .write()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            for plan in &plans {
-                if let Some(cached) = observations.get_mut(&plan.connection.account_id)
-                    && cached.matches(plan)
-                {
-                    cached.checked_at = now;
-                    continue;
-                }
-                if plan.last_success_at.is_none()
-                    || plan.last_error == Some(UpstreamInfoFailure::Unauthorized)
-                {
-                    replaced.push(observations.insert(
-                        plan.connection.account_id.clone(),
-                        CachedObservation::new(plan, None, None, now),
-                    ));
-                } else {
-                    changed.push(plan.connection.account_id.clone());
-                }
-            }
-        }
-        // 调度投影可能被其他请求持有，替换后的最后一次释放也留在锁外
-        drop(replaced);
-        // 完整观测可接近协议大小上限，投影后及时释放，避免同时物化整页 JSON
-        for batch in changed.chunks(SNAPSHOT_READ_BATCH) {
-            for record in self.store.read(batch).await? {
-                if let Some(plan) = plans
-                    .iter_mut()
-                    .find(|plan| plan.connection.account_id == record.plan.connection.account_id)
-                {
-                    *plan = record.plan.clone();
-                }
-                self.cache(&record);
-            }
-        }
-        let observations = self
-            .observations
-            .read()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        Ok(plans
-            .into_iter()
-            .map(|plan| {
-                let summary = observations
-                    .get(&plan.connection.account_id)
-                    .filter(|cached| cached.matches(&plan))
-                    .and_then(|cached| cached.summary.clone());
-                (plan, summary)
-            })
-            .collect())
-    }
-
-    fn cache(&self, record: &UpstreamInfoRecord) {
-        let now = SystemTime::now();
-        let mut peer = record.snapshot.as_ref().and_then(snapshot::decode);
-        let scheduling = peer
-            .as_ref()
-            .and_then(|peer| SchedulingObservation::new(peer, now))
-            .filter(|observation| observation.fresh(now))
-            .map(Arc::new);
-        let summary = peer.take().map(|mut peer| {
-            peer.quota = Default::default();
-            peer.models = Vec::new();
-            Arc::new(peer)
-        });
-        let cached = CachedObservation::new(&record.plan, scheduling, summary, now);
-        let previous = self
-            .observations
-            .write()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .insert(record.plan.connection.account_id.clone(), cached);
-        drop(previous);
     }
 }
 
 impl UpstreamInfoSource for PeerInfoService {
-    /// 数据面只取不可变投影；模型查询与有效期判断不持有共享锁
     fn signal(
         &self,
         account: &ProviderAccount,
         model: &str,
         now: SystemTime,
     ) -> Option<UpstreamSchedulingSignal> {
+        if !account.enabled() {
+            return None;
+        }
         let connection = UpstreamConnection::for_account(account);
         let scheduling = {
             let observations = self
@@ -516,10 +262,4 @@ impl UpstreamInfoSource for PeerInfoService {
         };
         scheduling.signal(model, now)
     }
-}
-
-fn stable_jitter(id: &str) -> u64 {
-    id.bytes().fold(0_u64, |hash, byte| {
-        hash.wrapping_mul(31).wrapping_add(u64::from(byte))
-    }) % 60
 }

@@ -933,6 +933,7 @@ async fn openai_admin_batch_quota_isolates_stale_and_invalid_observations() {
             };
             store
                 .compare_and_swap_quota(QuotaObservation {
+                    expected_connection: None,
                     account_id: account.id().clone(),
                     expected_revision: account.revision(),
                     observed_at: SystemTime::now(),
@@ -1276,6 +1277,7 @@ async fn openai_admin_projects_free_plan_from_cached_quota_when_account_claims_o
     let observed_at = SystemTime::now();
     store
         .compare_and_swap_quota(QuotaObservation {
+            expected_connection: None,
             plan_type: None,
             account_id: account.id().clone(),
             expected_revision: account.revision(),
@@ -1391,6 +1393,7 @@ async fn openai_admin_provider_projects_official_codex_quota_and_independent_buc
     let observed_at = SystemTime::now();
     store
         .compare_and_swap_quota(QuotaObservation {
+            expected_connection: None,
             plan_type: None,
             account_id: account.id().clone(),
             expected_revision: account.revision(),
@@ -1493,6 +1496,7 @@ async fn openai_admin_keeps_confirmed_exhaustion_separate_from_raw_usage_display
     let observed_at = SystemTime::now();
     store
         .compare_and_swap_quota(QuotaObservation {
+            expected_connection: None,
             plan_type: None,
             account_id: account.id().clone(),
             expected_revision: account.revision(),
@@ -1604,6 +1608,7 @@ async fn openai_admin_preserves_expired_window_usage_and_exhaustion_attribution(
         };
         store
             .compare_and_swap_quota(QuotaObservation {
+                expected_connection: None,
                 plan_type: None,
                 account_id: account.id().clone(),
                 expected_revision: account.revision(),

@@ -1,4 +1,4 @@
-//! 互联快照展示与异步刷新 HTTP 合同
+//! 互联快照与金额的管理端展示投影
 
 use gateway_admin::model::upstream_info::{ProviderUpstreamInfo, UpstreamQuotaAmount};
 
@@ -8,30 +8,13 @@ use super::*;
 #[serde(rename_all = "camelCase")]
 pub struct AccountUpstreamInfoView {
     pub discovered: bool,
-    pub node: Option<UpstreamNodeView>,
     pub observed_at: Option<String>,
     pub observed_at_display: String,
     pub observed_at_relative: Option<crate::time::RelativeTimeView>,
     pub stale: bool,
     pub connection_revision: String,
-    pub sync: UpstreamSyncView,
     pub last_error: Option<String>,
     pub pool: Option<UpstreamPoolView>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct UpstreamNodeView {
-    pub id: String,
-    pub name: String,
-    pub software: String,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct UpstreamSyncView {
-    pub state: String,
-    pub request_generation: u64,
-    pub completed_generation: u64,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -56,20 +39,6 @@ pub struct UpstreamPoolStatesView {
 pub struct UpstreamPlanView {
     pub name: String,
     pub count: u32,
-}
-
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-struct RefreshReceiptView {
-    account_id: String,
-    connection_revision: String,
-    request_generation: u64,
-    state: String,
-}
-
-#[derive(Serialize)]
-struct RefreshData {
-    items: Vec<RefreshReceiptView>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -101,11 +70,6 @@ pub(crate) fn view(
 ) -> AccountUpstreamInfoView {
     AccountUpstreamInfoView {
         discovered: info.discovered,
-        node: info.node.map(|node| UpstreamNodeView {
-            id: node.id,
-            name: node.name,
-            software: node.software,
-        }),
         observed_at: info.observed_at.map(|value| time.rfc3339(&value)),
         observed_at_display: info
             .observed_at
@@ -113,11 +77,6 @@ pub(crate) fn view(
         observed_at_relative: info.observed_at.map(|value| time.relative_view(value, now)),
         stale: info.stale,
         connection_revision: info.connection_revision,
-        sync: UpstreamSyncView {
-            state: info.sync.state.as_str().to_owned(),
-            request_generation: info.sync.request_generation,
-            completed_generation: info.sync.completed_generation,
-        },
         last_error: info.last_error,
         pool: info.pool.map(|pool| UpstreamPoolView {
             account_count: pool.account_count,
@@ -139,53 +98,4 @@ pub(crate) fn view(
                 .collect(),
         }),
     }
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub(super) struct RefreshRequest {
-    account_ids: Vec<String>,
-}
-
-pub(super) async fn refresh<S>(
-    _auth: AdminAuth,
-    State(state): State<S>,
-    AdminJson(request): AdminJson<RefreshRequest>,
-) -> Result<impl IntoResponse, AdminError>
-where
-    S: crate::auth::SessionState + Send + Sync,
-{
-    if request.account_ids.is_empty() || request.account_ids.len() > 200 {
-        return Err(map_wire_error(WireValidationError::new("accountIds")));
-    }
-    let ids = request
-        .account_ids
-        .into_iter()
-        .collect::<BTreeSet<_>>()
-        .into_iter()
-        .map(|id| {
-            require_account_id(&id, "accountIds")?;
-            ProviderAccountId::new(id).map_err(|_| WireValidationError::new("accountIds"))
-        })
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(map_wire_error)?;
-    let items = state
-        .admin_services()
-        .accounts()
-        .refresh_upstream_info(ids)
-        .await
-        .map_err(map_service_error)?;
-    let items = items
-        .into_iter()
-        .map(|item| RefreshReceiptView {
-            account_id: item.account_id,
-            connection_revision: item.connection_revision,
-            request_generation: item.request_generation,
-            state: item.state.as_str().to_owned(),
-        })
-        .collect();
-    Ok(AdminResponse::new(
-        StatusCode::ACCEPTED,
-        AdminEnvelope::ok(RefreshData { items }),
-    ))
 }

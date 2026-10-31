@@ -55,13 +55,6 @@ const CONNECTION_TEST_INPUT: &str = "Reply with exactly OK.";
 /// 统一账号页消费的服务
 #[async_trait]
 pub trait AccountsService: Send + Sync {
-    async fn refresh_upstream_info(
-        &self,
-        _account_ids: Vec<ProviderAccountId>,
-    ) -> Result<Vec<crate::model::upstream_info::UpstreamRefreshReceipt>, AdminError> {
-        Err(AdminError::invalid("该服务商不支持上游信息查询"))
-    }
-
     async fn concurrency(
         &self,
         account_id: ProviderAccountId,
@@ -529,33 +522,6 @@ impl DefaultAccountsService {
 
 #[async_trait]
 impl AccountsService for DefaultAccountsService {
-    async fn refresh_upstream_info(
-        &self,
-        account_ids: Vec<ProviderAccountId>,
-    ) -> Result<Vec<crate::model::upstream_info::UpstreamRefreshReceipt>, AdminError> {
-        if account_ids.is_empty() || account_ids.len() > 200 {
-            return Err(AdminError::invalid("请选择要刷新的账号"));
-        }
-        let mut results = Vec::with_capacity(account_ids.len());
-        for id in account_ids {
-            let (stored, provider) = self.provider_for_account(&id).await?;
-            if !provider.supports_peer_connection(&stored.account.authentication_kind) {
-                return Err(AdminError::invalid("该账号不支持上游信息刷新"));
-            }
-            let peer = self
-                .upstream_info
-                .as_deref()
-                .ok_or_else(|| AdminError::invalid("上游信息服务未启用"))?;
-            results.push(peer.request_refresh(&id).await.map_err(|error| {
-                map_provider_error(
-                    super::peer_link::upstream::store_error(error),
-                    "upstream information refresh",
-                )
-            })?);
-        }
-        Ok(results)
-    }
-
     async fn concurrency(
         &self,
         account_id: ProviderAccountId,

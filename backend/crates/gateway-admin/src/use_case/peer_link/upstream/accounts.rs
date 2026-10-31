@@ -37,10 +37,12 @@ pub(crate) async fn read_quota(
     account: &AccountRecord,
     request: ProviderQuotaRequest,
 ) -> Result<ProviderQuota, ProviderAdminError> {
-    if !request.refresh
-        && provider.supports_peer_connection(&account.authentication_kind)
+    if provider.supports_peer_connection(&account.authentication_kind)
         && let Some(peer) = peer
     {
+        if request.refresh {
+            return peer.refresh_quota(&request.account_id).await;
+        }
         return peer
             .read_quota(&request.account_id)
             .await
@@ -93,23 +95,20 @@ pub(super) async fn read_peer_quotas(
         .iter()
         .map(|request| connection(request.account))
         .collect::<Vec<_>>();
-    let ids = connections
+    let queries = connections
         .iter()
-        .filter_map(|connection| {
-            connection
-                .as_ref()
-                .ok()
-                .map(|value| value.account_id.clone())
-        })
+        .zip(requests)
+        .filter(|(_, request)| request.account.enabled)
+        .filter_map(|(connection, _)| connection.as_ref().ok().cloned())
         .collect::<Vec<_>>();
-    if ids.is_empty() {
+    if queries.is_empty() {
         return connections
             .into_iter()
             .map(|connection| connection.map(|_| ProviderQuota::default()))
             .collect();
     }
     let summaries = service
-        .read_summaries(&ids)
+        .read_summaries(&queries)
         .await
         .map(|records| {
             records

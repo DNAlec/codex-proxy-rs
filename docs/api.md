@@ -223,7 +223,7 @@ WebSocket message 和 frame 不设置网关私有长度上限；请求字段与�
 | `POST` | `/v1/providers/{provider}/models/{model}/count_tokens` | 调用指定 Provider/model 声明的精确 Token 计数；请求和响应均为 JSON |
 | `GET` / `POST` | `/v1/providers/{provider}/http/{endpoint}` | 调用指定 Provider 预先声明的固定 HTTP 操作；不是任意 URL 代理 |
 | `GET` | `/v1/usage` | 查询当前 Client Key 的日与周额度，仅使用网关已结算的 USD 账本 |
-| `GET` | `/v1/cpr/link` | 返回当前 Key 获准公开的 CPR 互联节点、预算及直连账号池观测 |
+| `GET` | `/v1/cpr/link` | 返回当前 Key 获准公开的预算及直连账号池观测 |
 
 ### Chat Completions 请求
 
@@ -727,9 +727,10 @@ OpenAI 选号阶段确认本次可选账号全部额度耗尽时，HTTP 返回 `
 只有该 Key 显式开启 `peerSharing.enabled` 且绑定非空分组时可查询。接口不接受 Cookie、管理 API Key 或查询参数，
 不执行推理、占用推理并发/RPM、更新最近使用时间或刷新上游；Key 预算耗尽后仍可查询
 
-协议识别依赖 `object: "cpr.peer"`、`schema_version: 1` 和 `capabilities`，不依赖 `node.software`。
-第三方项目或插件可实现同一协议；未知能力可以忽略，不支持的版本应按不兼容处理。
-响应直接返回 JSON，所有状态均带 `Cache-Control: no-store`。节点 ID 在本节点持久化，名称与软件名仅用于展示
+协议识别依赖 `object: "cpr.peer"`、`schema_version: 1` 和 `capabilities`，不发布独立节点身份。
+未知能力可以忽略，不支持的版本按不兼容处理。
+第三方项目或插件可实现同一协议，连接由本地账号及其凭据、出口版本识别。
+响应直接返回 JSON，所有状态均带 `Cache-Control: no-store`
 
 只公开预算的完整响应形态如下：
 
@@ -737,7 +738,6 @@ OpenAI 选号阶段确认本次可选账号全部额度耗尽时，HTTP 返回 `
 {
   "object": "cpr.peer",
   "schema_version": 1,
-  "node": { "id": "7527ed09-c917-445f-9355-de6501803ccf", "name": "CPR 节点", "software": "codex-proxy-rs" },
   "capabilities": ["key_usage"],
   "observed_at": "2026-10-29T12:00:00Z",
   "expires_at": "2026-10-29T12:05:00Z",
@@ -966,8 +966,7 @@ config 返回 `{ name, plaintextKey }`，仅读取服务端会话绑定的当前
 | `POST` | `/api/admin/accounts/delete` | `{ provider, accountIds }` | 批量删除 1–200 个账号 |
 | `GET` | `/api/admin/accounts/quota` | `accountId` | 读取当前额度，不强制访问上游；Provider 未提供额度能力时返回空额度投影 |
 | `GET` | `/api/admin/accounts/quota-forecast` | `accountId` | 按需读取周/月容量预测、源窗口剩余估算与采样依据，不刷新上游额度 |
-| `POST` | `/api/admin/accounts/quota/refresh` | `{ accountId }` | 访问 Provider 并刷新额度，同时同步额度所属状态 |
-| `POST` | `/api/admin/accounts/upstream-info/refresh` | `{ accountIds }` | 为已识别互联能力的 API Key 账号保存刷新计划，返回 HTTP 202，不等待上游 |
+| `POST` | `/api/admin/accounts/quota/refresh` | `{ accountId }` | 按账号来源刷新原生或互联额度，同时同步额度所属状态 |
 | `GET` | `/api/admin/accounts/personal-info` | `accountId` | 按需汇聚 Provider 上游个人资料、累计活动与订阅信息，不更新额度或 credential |
 | `GET` | `/api/admin/accounts/profile-avatar` | `accountId`、可选 `version` | 返回支持头像能力的 Provider 字节流，需要管理员会话；`version` 仅区分浏览器缓存 |
 | `GET` | `/api/admin/accounts/reset-credits` | `accountId` | 查询支持该能力的 Provider 重置卡，不读取本地库存 |
@@ -1053,17 +1052,15 @@ OpenAI 主动额度刷新和正常响应携带的明确套餐会同步到账号�
 
 账号列表返回已保存观测的 Key 预算窗口与池汇总；详情和额度 GET 另含池内逐账号窗口。
 查询这些接口不会访问上游，展开节点视图时通过账号详情读取窗口。
-`account.upstream` 未建立计划或账号停用时为 `null`；有计划时包含：
+`account.upstream` 在账号不支持互联或停用时为 `null`；支持互联的账号包含：
 
 | 字段 | 含义 |
 | --- | --- |
-| `discovered` | 当前连接已成功识别兼容协议，首次识别前为 `false`；界面仅为已识别连接展示互联信息 |
-| `node` | 已验证协议返回的 `{ id, name, software }`，首次同步前或授权被拒绝时为 `null` |
+| `discovered` | 当前连接存在有效解析的互联快照；首次识别前或授权撤销后为 `false` |
 | `observedAt`、`observedAtDisplay`、`observedAtRelative` | 上游观测时间及服务端格式化结果，不代表本次页面查询时间 |
 | `stale` | 快照是否已过期；过期值仅供查看 |
-| `connectionRevision` | 当前连接身份的不可解释标识，地址、密钥或出口变化后应停止等待旧身份 |
-| `sync` | `{ state, requestGeneration, completedGeneration }`，状态为 `idle`、`queued` 或 `running` |
-| `lastError` | 最近同步失败分类：`unauthorized`、`unsupported`、`rate_limited`、`invalid_response`、`unavailable`，成功时为 `null` |
+| `connectionRevision` | 当前连接身份的不可解释标识，用于隔离地址、密钥或出口变化前的展示结果 |
+| `lastError` | 当前实例最近同步失败分类：`unauthorized`、`unsupported`、`rate_limited`、`invalid_response`、`unavailable`，成功时为 `null` |
 | `pool` | 上游授权公开的账号数量、状态数量及套餐数量，未公开时为 `null` |
 
 互联额度复用 `quota.windows`。可用的上游 Key 账本始终保留日、周窗口，不限额也保留已用金额。
@@ -1075,28 +1072,11 @@ Key 消费窗口的 `localUsage` 按各自 `[resetAt - windowSeconds, resetAt)` 
 不相加为统一余额，`localUsage` 保持缺失；Key 消费窗口与本机账号窗口不返回该字段。
 互联窗口返回独立的 `observedAtDisplay` 和 `stale`
 
-`POST /api/admin/accounts/upstream-info/refresh` 使用管理员鉴权，接受 1–200 个账号 ID，重复 ID 合并。
-成功返回 HTTP 202，响应 `data` 为：
-
-```json
-{
-  "items": [
-    {
-      "accountId": "acct_...",
-      "connectionRevision": "<opaque-revision>",
-      "requestGeneration": 3,
-      "state": "queued"
-    }
-  ]
-}
-```
-
-202 表示计划已保存，不表示上游查询成功。已排队或运行的请求合并为同一代次；调用者后续读取原有
-账号接口，在连接身份相同且 `completedGeneration >= requestGeneration` 时结束等待，再检查
-`lastError` 与快照时间。手动刷新遵守最小间隔和失败退避，不能通过反复提交绕过上游限流
-
-网络错误、限流或无效响应保留同一连接的旧观测；401/403 或连接身份变化清除旧观测。
-单个账号停用时停止同步并清理互联观测，重新启用后建立计划
+手动刷新复用 `POST /api/admin/accounts/quota/refresh`，请求 `{ accountId }`，与原生额度刷新一样等待查询结束并返回账号视图。
+查询失败通过现有管理错误返回；并发刷新合并，连续刷新遵守最小间隔和上游重试时间。
+自动刷新由后台任务执行，刷新节流与错误提示属于当前实例的运行期状态，重启后重新建立。
+网络错误、限流或无效响应保留旧观测；401/403 清除已撤销内容，账号凭据或出口变更使旧快照失效。
+账号停用后停止同步，重新启用后由后台重新查询
 
 成功同步后，明确的预算访问结论决定账号是否进入 `quota_exhausted`；
 有效的 `usage.data.allowed: true` 自动解除更早的耗尽，恢复参与调度。

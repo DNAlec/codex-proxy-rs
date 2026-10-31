@@ -5,9 +5,8 @@ use gateway_admin::model::peer_link::{PeerLinkExport, PeerModelState as ModelSta
 use gateway_core::metering::Decimal;
 use gateway_protocol::peer::{
     OBJECT, PeerBudgetWindow, PeerComponentStatus, PeerKeyUsage, PeerLink, PeerModelAvailability,
-    PeerModelCoverage, PeerModelState, PeerNode, PeerPlanCount, PeerPool, PeerPoolDisclosure,
-    PeerPoolStates, PeerQuota, PeerQuotaAccount, PeerQuotaDisclosure, PeerQuotaWindow, PeerUsage,
-    SCHEMA_VERSION,
+    PeerModelCoverage, PeerModelState, PeerPlanCount, PeerPool, PeerPoolDisclosure, PeerPoolStates,
+    PeerQuota, PeerQuotaAccount, PeerQuotaDisclosure, PeerQuotaWindow, PeerUsage, SCHEMA_VERSION,
 };
 use std::time::SystemTime;
 
@@ -76,11 +75,6 @@ pub(super) fn response(export: PeerLinkExport) -> PeerLink {
     PeerLink {
         object: OBJECT.to_owned(),
         schema_version: SCHEMA_VERSION,
-        node: PeerNode {
-            id: export.node.id,
-            name: export.node.name,
-            software: "codex-proxy-rs".to_owned(),
-        },
         capabilities,
         observed_at: export.observed_at.to_rfc3339(),
         expires_at: export.expires_at.to_rfc3339(),

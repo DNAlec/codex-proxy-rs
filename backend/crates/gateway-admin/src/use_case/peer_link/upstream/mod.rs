@@ -1,8 +1,10 @@
 //! 公共 CPR 上游同步、管理投影与调度观测，连接凭据解释由 Provider 提供
 
 mod accounts;
+mod cache;
 mod projection;
 mod quota;
+mod refresh;
 mod scheduling;
 mod service;
 mod snapshot;
@@ -11,15 +13,15 @@ mod worker;
 use std::sync::Arc;
 
 use crate::{
-    model::{provider_credentials::ProviderQuota, upstream_info::UpstreamRefreshReceipt},
+    model::provider_credentials::ProviderQuota,
     ports::{
         peer::{PeerTransport, PeerUpstreamService},
         provider::ProviderAdminRegistry,
     },
 };
-pub(crate) use accounts::{read_quota, read_quotas, store_error};
+pub(crate) use accounts::{read_quota, read_quotas};
 use gateway_core::{
-    account::{ProviderAccountId, ProviderAccountStore, UpstreamInfoSource, UpstreamInfoStore},
+    account::{ProviderAccountId, ProviderAccountStore, UpstreamInfoSource},
     error::StoreError,
     task::{WorkerContribution, WorkerDefinitionError},
 };
@@ -47,11 +49,10 @@ impl PeerUpstreamBundle {
 
 pub fn initialize(
     accounts: Arc<dyn ProviderAccountStore>,
-    store: Arc<dyn UpstreamInfoStore>,
     providers: &ProviderAdminRegistry,
     transport: Arc<dyn PeerTransport>,
 ) -> Result<PeerUpstreamBundle, WorkerDefinitionError> {
-    let service = Arc::new(PeerInfoService::new(accounts, store, providers, transport));
+    let service = Arc::new(PeerInfoService::new(accounts, providers, transport));
     let worker = service.worker()?;
     Ok(PeerUpstreamBundle {
         service,
@@ -69,13 +70,11 @@ impl PeerUpstreamService for PeerInfoService {
         PeerInfoService::forget(self, id);
     }
 
-    async fn request_refresh(
+    async fn refresh_quota(
         &self,
         id: &ProviderAccountId,
-    ) -> Result<UpstreamRefreshReceipt, StoreError> {
-        PeerInfoService::request_refresh(self, id)
-            .await
-            .map(|plan| Self::receipt(&plan))
+    ) -> Result<ProviderQuota, crate::ports::provider::ProviderAdminError> {
+        PeerInfoService::refresh(self, id, true).await
     }
 
     async fn read_quota(

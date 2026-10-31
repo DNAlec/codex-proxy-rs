@@ -60,7 +60,7 @@ const paletteClass = computed(() => {
 </script>
 
 <template>
-  <AccountUpstreamBadge v-if="upstream?.discovered && upstream.node" :size="size" />
+  <AccountUpstreamBadge v-if="upstream?.discovered && upstream.observedAt" :size="size" />
   <span
     v-else
     class="inline-flex min-w-0 max-w-full items-center justify-center whitespace-nowrap leading-none shadow-cp-tertiary"

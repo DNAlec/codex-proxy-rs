@@ -58,12 +58,12 @@ mod admin_queries;
 mod authorization;
 mod core_adapter;
 mod mapping;
+mod quota;
 mod quota_forecast;
 mod repository;
 mod reset_credit_automation;
 mod rows;
 mod runtime;
-mod upstream_info;
 
 pub use admin_adapter::*;
 pub(crate) use admin_queries::*;
