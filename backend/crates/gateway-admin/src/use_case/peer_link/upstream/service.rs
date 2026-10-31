@@ -24,6 +24,9 @@ use std::{
     sync::{Arc, Mutex, RwLock},
     time::SystemTime,
 };
+use tokio::sync::Semaphore;
+
+const REFRESH_CONCURRENCY: usize = 4;
 
 pub(super) struct CachedObservation {
     pub connection: UpstreamConnection,
@@ -40,6 +43,7 @@ pub(crate) struct PeerInfoService {
     pub(super) attempts: Mutex<HashMap<ProviderAccountId, Arc<tokio::sync::Mutex<RefreshState>>>>,
     cursors: Mutex<BTreeMap<ProviderKind, usize>>,
     pub(super) cache_refresh: tokio::sync::Mutex<()>,
+    pub(super) refresh_slots: Semaphore,
     pub(super) observations: RwLock<HashMap<ProviderAccountId, CachedObservation>>,
 }
 
@@ -56,6 +60,7 @@ impl PeerInfoService {
             attempts: Mutex::default(),
             cursors: Mutex::default(),
             cache_refresh: tokio::sync::Mutex::new(()),
+            refresh_slots: Semaphore::new(REFRESH_CONCURRENCY),
             observations: RwLock::default(),
         }
     }
@@ -248,7 +253,7 @@ impl PeerInfoService {
                 if let Err(error) = self.refresh(&connection.account_id, false).await {
                     tracing::warn!(account_id = %connection.account_id, error = %error, "Upstream quota refresh failed");
                 }
-            }).buffer_unordered(4).collect::<Vec<_>>().await;
+            }).buffer_unordered(REFRESH_CONCURRENCY).collect::<Vec<_>>().await;
         }
         // 查询失败时保留该轮无法核对的账号，避免错误风暴清空所有节流记录
         if failure.is_none() && !context.cancellation().is_cancelled() {

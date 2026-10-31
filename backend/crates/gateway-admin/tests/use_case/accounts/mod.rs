@@ -737,6 +737,20 @@ impl FakeAccountStore {
 
 #[async_trait]
 impl AccountStore for FakeAccountStore {
+    async fn load_account_record(
+        &self,
+        account_id: &ProviderAccountId,
+    ) -> AdminStoreResult<Option<AccountRecord>> {
+        self.record("store.load_account_record");
+        Ok(self
+            .accounts
+            .lock()
+            .expect("accounts")
+            .iter()
+            .find(|account| account.id == account_id.as_str())
+            .cloned())
+    }
+
     async fn account_exists(&self, account_id: &str) -> AdminStoreResult<bool> {
         self.record("store.account_exists");
         Ok(self
@@ -3728,6 +3742,7 @@ fn unsupported() -> ProviderAdminError {
 
 pub(super) fn import_settings() -> gateway_admin::model::accounts::AccountImportSettings {
     gateway_admin::model::accounts::AccountImportSettings {
+        name: None,
         notes: Some("团队备用".to_owned()),
         model_access: Default::default(),
         enabled: false,

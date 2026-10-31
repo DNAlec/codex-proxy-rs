@@ -230,6 +230,18 @@ impl PgAdminAccountStore {
 
 #[async_trait]
 impl AccountStore for PgAdminAccountStore {
+    async fn load_account_record(
+        &self,
+        account_id: &CoreProviderAccountId,
+    ) -> AdminStoreResult<Option<AccountRecord>> {
+        self.accounts
+            .load_provider_account(account_id.as_str())
+            .await
+            .map_err(|error| admin_store_error(ENTITY, error))?
+            .map(|record| admin_account_record(record.summary))
+            .transpose()
+    }
+
     async fn load_accounts_in_enabled_groups(
         &self,
         account_ids: &[CoreProviderAccountId],
@@ -901,6 +913,14 @@ pub(super) fn prepare_import(
             .extend(["enabled", "concurrency_limit", "weight", "group_ids"].map(str::to_owned));
         if settings.notes.is_some() {
             changed_fields.push("notes".to_owned());
+        }
+        if accounts.len() == 1
+            && settings
+                .name
+                .as_deref()
+                .is_some_and(|name| !name.trim().is_empty())
+        {
+            changed_fields.push("name".to_owned());
         }
     }
     Ok(ImportProviderAccounts {

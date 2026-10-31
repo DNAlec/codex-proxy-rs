@@ -497,6 +497,13 @@ impl AccountGroupStore for UnavailableAccountGroupStore {
 
 #[async_trait]
 impl AccountStore for UnavailableStore {
+    async fn load_account_record(
+        &self,
+        _: &ProviderAccountId,
+    ) -> AdminStoreResult<Option<gateway_admin::model::accounts::AccountRecord>> {
+        Err(unavailable("account"))
+    }
+
     async fn account_exists(&self, _: &str) -> AdminStoreResult<bool> {
         Err(unavailable("account"))
     }

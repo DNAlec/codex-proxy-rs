@@ -76,7 +76,7 @@ export function useAccountOnboarding(options: {
           data: {
             provider: 'openai',
             authentication_kind: 'api_key',
-            name: form.apiKey.name.trim(),
+            name: form.name.trim(),
             base_url: form.apiKey.base_url.trim(),
             api_key: form.apiKey.apiKey,
             transport: form.apiKey.transport,
@@ -93,7 +93,9 @@ export function useAccountOnboarding(options: {
       const batches = accountImportBatches(documents.map(entry => ({
         provider: entry.provider,
         data: entry.document,
-        settings,
+        settings: documents.length === 1
+          ? settings
+          : { ...settings, name: undefined },
         outboundProxyId,
       })))
       // 同一输入重试时复用每批标识，恢复丢失响应或部分提交，不重复执行 RT 交换
@@ -134,7 +136,7 @@ export function useAccountOnboarding(options: {
       await authorization.start({
         start: {
           provider,
-          name: account?.name ?? '',
+          name: account?.name ?? form.name.trim(),
           accountId: account?.id,
           outboundProxyId: account
             ? undefined

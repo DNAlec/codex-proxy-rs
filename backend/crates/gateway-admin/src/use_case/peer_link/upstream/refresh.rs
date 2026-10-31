@@ -71,6 +71,12 @@ impl PeerInfoService {
         id: &ProviderAccountId,
         manual: bool,
     ) -> Result<ProviderQuota, ProviderAdminError> {
+        // 首查、手动与周期刷新共享容量；排队后再读凭据，避免使用等待期间失效的连接
+        let _permit = self
+            .refresh_slots
+            .acquire()
+            .await
+            .map_err(|_| ProviderAdminError::new(ProviderAdminErrorKind::Unavailable))?;
         let loaded = self
             .accounts
             .load_current_credential(id)

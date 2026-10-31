@@ -2,9 +2,11 @@ import type { FormRules } from '@codex-proxy/ui'
 import type { AccountModelAccess } from '@/api'
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { accountNameValid } from '../utils/accountName'
 import { accountModelAccessError } from '../utils/modelAccess'
 
 interface AccountSettingsFormValue {
+  name?: string
   concurrencyLimit: string
   weight: string
   modelAccess?: AccountModelAccess
@@ -14,10 +16,16 @@ interface AccountSettingsFormValue {
 
 export function useAccountSettingsFormRules(
   form: () => AccountSettingsFormValue,
-  editedFields?: () => ReadonlySet<string>,
+  options: { editedFields?: () => ReadonlySet<string>, savedName?: () => string } = {},
 ) {
+  const { editedFields, savedName } = options
   const { t } = useI18n({ useScope: 'global' })
   return computed<FormRules<AccountSettingsFormValue>>(() => ({
+    name: {
+      trigger: ['blur', 'change'],
+      validator: () => accountNameValid(form().name ?? '', savedName?.()),
+      message: t('accounts.editor.nameInvalid'),
+    },
     concurrencyLimit: {
       type: 'integer',
       trigger: ['blur', 'change'],

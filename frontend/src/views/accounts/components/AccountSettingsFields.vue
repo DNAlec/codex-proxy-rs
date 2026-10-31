@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import type { AccountGroupRef, AccountModelAccess } from '@/api'
 
-import { ZFormItem, ZInput, ZSwitch } from '@codex-proxy/ui'
+import { ZFormItem, ZInput, ZSwitch, ZTextarea } from '@codex-proxy/ui'
 import { useI18n } from 'vue-i18n'
 import AccountGroupCheckboxGrid from '@/components/AccountGroupCheckboxGrid.vue'
 import AccountModelAccessField from './AccountModelAccessField.vue'
+import AccountNameField from './AccountNameField.vue'
 import AccountProxyField from './AccountProxyField.vue'
 
 withDefaults(defineProps<{
@@ -17,10 +18,14 @@ withDefaults(defineProps<{
   preserveProxy?: boolean
   preserveModelAccess?: boolean
   showScheduling?: boolean
+  namePlaceholder?: string
+  notesPlaceholder?: string
 }>(), { preserveProxy: true, showScheduling: true })
 
 const { t } = useI18n({ useScope: 'global' })
 
+const name = defineModel<string>('name')
+const notes = defineModel<string>('notes')
 const modelAccess = defineModel<AccountModelAccess | undefined>('modelAccess', { required: true })
 const enabled = defineModel<boolean>('enabled')
 const concurrencyLimit = defineModel<string>('concurrencyLimit', { required: true })
@@ -78,5 +83,9 @@ const selectedGroupIds = defineModel<string[]>('selectedGroupIds', { required: t
       />
     </ZFormItem>
     <AccountProxyField v-model:mode="proxyMode" v-model:proxy-id="proxyId" form-prop="proxyId" :preserve="preserveProxy" :current-proxy-id="currentProxyId" :endpoint="endpoint" :account-id="accountId" :disabled="disabled" />
+    <AccountNameField v-if="name !== undefined" v-model="name" :disabled="disabled" :placeholder="namePlaceholder" />
+    <ZFormItem v-if="notes !== undefined" :label="t('common.fields.notes')">
+      <ZTextarea v-model="notes" :rows="3" :maxlength="500" :placeholder="notesPlaceholder ?? t('accounts.editor.notesHelp')" :disabled="disabled" />
+    </ZFormItem>
   </div>
 </template>

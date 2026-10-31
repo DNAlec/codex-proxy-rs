@@ -3,6 +3,71 @@
 use super::*;
 
 #[tokio::test]
+async fn import_name_only_overrides_a_single_account_and_keeps_batch_names() {
+    use gateway_admin::model::accounts::AccountImportSettings;
+
+    let Some(database) = TestDatabase::create("import_account_name").await else {
+        return;
+    };
+    let repository = PgProviderAccountRepository::new(database.pool.clone());
+    for (index, (name, expected)) in [
+        (Some("  自定义账号  "), vec!["自定义账号"]),
+        (None, vec!["导入名称 0"]),
+        (Some("  "), vec!["导入名称 0"]),
+        (Some("批量不改名"), vec!["导入名称 0", "导入名称 1"]),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let records = (0..expected.len())
+            .map(|item| {
+                let id = format!("acct_name_{index}_{item}");
+                let mut record = account(&id, &id);
+                record.name = format!("导入名称 {item}");
+                record
+            })
+            .collect::<Vec<_>>();
+        let result = repository
+            .import_provider_accounts(ImportProviderAccounts {
+                outbound_proxy: None,
+                settings: Some(AccountImportSettings {
+                    name: name.map(str::to_owned),
+                    notes: None,
+                    model_access: Default::default(),
+                    enabled: true,
+                    concurrency_limit: None,
+                    weight: gateway_core::account::AccountWeight::DEFAULT,
+                    group_ids: vec![],
+                }),
+                scope: ProviderAccountAdminScope {
+                    provider_kind: "openai".to_owned(),
+                },
+                accounts: records,
+                audit: audit(
+                    &format!("audit_name_{index}"),
+                    "import",
+                    "provider_accounts",
+                ),
+            })
+            .await
+            .unwrap();
+        for (id, name) in result.account_ids.iter().zip(expected) {
+            assert_eq!(
+                repository
+                    .load_provider_account(id)
+                    .await
+                    .unwrap()
+                    .unwrap()
+                    .summary
+                    .name,
+                name
+            );
+        }
+    }
+    database.close().await;
+}
+
+#[tokio::test]
 async fn scoped_account_reads_follow_current_enabled_groups_without_losing_admin_details() {
     let Some(database) = TestDatabase::create("account_group_scope").await else {
         return;
@@ -112,7 +177,7 @@ async fn scoped_account_reads_follow_current_enabled_groups_without_losing_admin
 }
 
 #[tokio::test]
-async fn account_existence_does_not_require_capacity_settings() {
+async fn lightweight_account_reads_do_not_require_capacity_settings() {
     let Some(database) = TestDatabase::create("account_existence").await else {
         return;
     };
@@ -128,6 +193,22 @@ async fn account_existence_does_not_require_capacity_settings() {
     let store = admin_account_store(&database.pool);
     assert!(store.account_exists("acct_exists").await.unwrap());
     assert!(!store.account_exists("acct_missing").await.unwrap());
+    assert_eq!(
+        store
+            .load_account_record(&ProviderAccountId::new("acct_exists").unwrap())
+            .await
+            .unwrap()
+            .unwrap()
+            .id,
+        "acct_exists"
+    );
+    assert!(
+        store
+            .load_account_record(&ProviderAccountId::new("acct_missing").unwrap())
+            .await
+            .unwrap()
+            .is_none()
+    );
     database.close().await;
 }
 

@@ -1349,12 +1349,15 @@ OAuth 账号仍按实际周/月额度窗口统计
 
 RT-only 使用同一形状，只提交 `refreshToken`。不得把真实 token 写入日志、issue、fixture 或文档
 
-账号导入与首次 OAuth complete 可附带 `settings: { enabled, concurrencyLimit, weight, groupIds, notes?, modelAccess? }`。
+账号导入与首次 OAuth complete 可附带 `settings: { enabled, concurrencyLimit, weight, groupIds, name?, notes?, modelAccess? }`。
 提供 `settings` 时前四项均必填，`concurrencyLimit: null` 继承运行参数，否则为 1–4294967295 的整数；
 `weight` 为 1–100，`groupIds` 为完整分组集合。设置应用于本次导入的全部账号，包括匹配到的已有账号，
 与凭据在同一事务内提交；分组不存在时整次回滚。省略 `settings` 时新账号使用默认设置并保持未分组，
 已有账号保留原有分组、权重与并发设置。可选 `notes` 与编辑备注使用相同的校验和清空语义，省略或 `null` 保留已有备注；
 管理端新建表单留空时省略 `notes`。重新授权不接受 `settings`，凭据刷新保留账号设置
+
+可选 `name` 与编辑名称使用相同的长度和控制字符约束，仅在单份导入数据解析出一个账号时覆盖名称。
+省略、`null`、留空或多账号导入均保留导入数据或服务商提供的名称；管理端批量导入不提交 `name`
 
 账号列表的每个 item 返回轻量 `groups: [{ id, name, enabled }]`
 

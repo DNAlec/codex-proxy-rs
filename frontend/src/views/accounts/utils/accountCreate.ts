@@ -9,6 +9,7 @@ export type AccountImportMode = 'oauth' | 'api_key' | 'access_token' | 'refresh_
 type AccountImportInputMode = 'access_token' | 'refresh_token' | 'json'
 
 export interface AccountCreateForm {
+  name: string
   source: AccountCreateSource | null
   apiKey: ApiKeyAccountForm
   notes: string
@@ -26,6 +27,7 @@ export interface AccountCreateForm {
 
 export function emptyAccountCreateForm(): AccountCreateForm {
   return {
+    name: '',
     source: null,
     apiKey: emptyApiKeyAccountForm(),
     notes: '',
@@ -56,6 +58,9 @@ export function accountCreateSourceKey(form: AccountCreateForm) {
 export function accountImportSettings(form: AccountCreateForm) {
   const scheduling = accountSchedulingValues(form.concurrencyLimit, form.weight)
   return {
+    name: form.source?.kind === 'provider'
+      ? form.name.trim() || undefined
+      : undefined,
     modelAccess: form.modelAccess
       ? {
           ...form.modelAccess,

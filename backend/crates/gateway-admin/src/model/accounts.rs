@@ -30,9 +30,10 @@ pub struct ProviderAccountCapabilities {
     pub consume_reset_credit: bool,
 }
 
-/// 导入时统一应用的账号备注、调度与分组设置；缺省时保留原有导入语义
+/// 导入时应用的账号设置；名称只覆盖单账号导入，其余设置统一应用
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AccountImportSettings {
+    pub name: Option<String>,
     pub notes: Option<String>,
     pub enabled: bool,
     pub concurrency_limit: Option<AccountConcurrencyLimit>,

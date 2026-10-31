@@ -17,6 +17,7 @@ import { useAccountSettingsFormRules } from '../../composables/useAccountSetting
 import { accountCreateProvider } from '../../utils/accountCreate'
 import AccountApiKeyFields from '../AccountApiKeyFields.vue'
 import AccountIdentityCell from '../AccountIdentityCell.vue'
+import AccountNameField from '../AccountNameField.vue'
 import AccountImportFields from './AccountImportFields.vue'
 import AccountOAuthFields from './AccountOAuthFields.vue'
 import AccountSetupFields from './AccountSetupFields.vue'
@@ -54,7 +55,12 @@ const busy = computed(() => props.saving
   || props.authorization.status === 'completing')
 const canSelect = computed(() => form.value.source?.kind === 'bundle' || Boolean(accountCreateProvider(form.value)))
 const formRef = useTemplateRef<InstanceType<typeof ZForm>>('formElement')
-const settingsRules = useAccountSettingsFormRules(() => form.value)
+const settingsRules = useAccountSettingsFormRules(() => ({
+  ...form.value,
+  name: form.value.source?.kind === 'provider'
+    ? form.value.name
+    : undefined,
+}))
 const apiKeyRules = useAccountApiKeyFormRules()
 const view = computed(() => resolveAccountCreatePresentation({
   form: form.value,
@@ -180,6 +186,7 @@ async function requestCreate() {
           @regenerate="emit('generateOauth')"
         />
         <ZForm v-else-if="mode === 'api_key'" ref="formElement" :model="form" :rules="apiKeyRules" scroll-to-error focus-on-error novalidate @submit="requestCreate">
+          <AccountNameField v-model="form.name" required :disabled="busy" :placeholder="t('accounts.credentials.enterUpstreamName')" />
           <AccountApiKeyFields v-model="form.apiKey" :disabled="busy" />
         </ZForm>
         <AccountImportFields

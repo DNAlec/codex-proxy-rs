@@ -4,3 +4,10 @@ export function accountNameUpdate(name: string, savedName: string): string | und
     return undefined
   return name.trim()
 }
+
+export function accountNameValid(name: string, savedName?: string): boolean {
+  const value = savedName === undefined
+    ? name.trim()
+    : accountNameUpdate(name, savedName)
+  return value === undefined || (new TextEncoder().encode(value).length <= 512 && !/\p{Cc}/u.test(value))
+}

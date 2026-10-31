@@ -4,7 +4,7 @@ import type { ApiKeyAccountForm } from '../utils/upstreamApiKey'
 
 import type { Account, AccountGroupRef, AccountModelAccess } from '@/api'
 
-import { ZButton, ZDialog, ZForm, ZFormItem, ZInput, ZSegmented, ZTextarea } from '@codex-proxy/ui'
+import { ZButton, ZDialog, ZForm, ZFormItem, ZSegmented } from '@codex-proxy/ui'
 
 import { computed, useTemplateRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -12,7 +12,6 @@ import AccountPlanBadge from '@/components/account/AccountPlanBadge.vue'
 import ProviderIconGroup from '@/components/ProviderIconGroup.vue'
 import { useAccountApiKeyFormRules } from '../composables/useAccountApiKeyFormRules'
 import { useAccountSettingsFormRules } from '../composables/useAccountSettingsFormRules'
-import { accountNameUpdate } from '../utils/accountName'
 import { isOpenAiApiKeyAccount, isOpenAiOAuthAccount } from '../utils/upstreamApiKey'
 import AccountApiKeyFields from './AccountApiKeyFields.vue'
 import AccountIdentityCell from './AccountIdentityCell.vue'
@@ -59,20 +58,13 @@ const form = computed(() => ({
   proxyMode: proxyMode.value,
   proxyId: proxyId.value,
 }))
-const settingsRules = useAccountSettingsFormRules(() => form.value)
+const settingsRules = useAccountSettingsFormRules(() => form.value, {
+  savedName: () => props.account?.name ?? '',
+})
 const apiKeyRules = useAccountApiKeyFormRules(true)
 const rules = computed<FormRules>(() => ({
   ...settingsRules.value,
   ...apiKeyRules.value,
-  name: {
-    trigger: ['blur', 'change'],
-    validator: () => {
-      const updatedName = accountNameUpdate(name.value, props.account?.name ?? '')
-      return updatedName === undefined
-        || (new TextEncoder().encode(updatedName).length <= 512 && !/\p{Cc}/u.test(updatedName))
-    },
-    message: t('accounts.editor.nameInvalid'),
-  },
 }))
 const saveDisabled = computed(() => !props.account || props.groupsLoading
   || (isOpenAiApiKeyAccount(props.account) && !props.configurationReady))
@@ -120,6 +112,8 @@ async function requestSave() {
       <AccountApiKeyFields v-if="isOpenAiApiKeyAccount(account)" v-model="apiKey" editing :disabled="saving || !configurationReady" />
 
       <AccountSettingsFields
+        v-model:name="name"
+        v-model:notes="notes"
         v-model:enabled="enabled"
         v-model:concurrency-limit="concurrencyLimit"
         v-model:weight="weight"
@@ -135,25 +129,6 @@ async function requestSave() {
         :endpoint="account.outboundProxyEndpoint"
         :account-id="account.id"
       />
-
-      <ZFormItem prop="name" :label="t('accounts.credentials.accountName')">
-        <ZInput
-          v-model="name"
-          :aria-label="t('accounts.credentials.accountName')"
-          :placeholder="t('accounts.editor.namePlaceholder')"
-          :disabled="saving"
-        />
-      </ZFormItem>
-
-      <ZFormItem :label="t('common.fields.notes')">
-        <ZTextarea
-          v-model="notes"
-          :rows="3"
-          :maxlength="500"
-          :placeholder="t('accounts.editor.notesHelp')"
-          :disabled="saving"
-        />
-      </ZFormItem>
     </ZForm>
 
     <template #footer>

@@ -17,9 +17,6 @@ const transportOptions = [
 </script>
 
 <template>
-  <ZFormItem v-if="!editing" prop="apiKey.name" :show-message="false" :label="t('accounts.credentials.accountName')" required>
-    <ZInput v-model="form.name" :placeholder="t('accounts.credentials.enterUpstreamName')" :disabled="disabled" />
-  </ZFormItem>
   <ZFormItem prop="apiKey.base_url" :show-message="Boolean(form.base_url.trim())" :label="t('common.fields.baseUrl')" required>
     <template #extra>
       <span class="text-z-xs text-z-text-quaternary" :title="t('accounts.credentials.baseUrlHelp')">{{ t('accounts.credentials.apiPrefix') }}</span>

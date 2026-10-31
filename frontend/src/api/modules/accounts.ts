@@ -474,6 +474,7 @@ interface AccountDeleteParams {
 }
 
 export interface AccountImportSettings {
+  name?: string
   notes?: string
   enabled: boolean
   concurrencyLimit: number | null

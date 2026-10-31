@@ -18,10 +18,11 @@ fn parse_provider(value: &str) -> Result<ProviderKind, WireValidationError> {
     ProviderKind::new(value.trim().to_owned()).map_err(|_| WireValidationError::new("provider"))
 }
 
-/// 导入统一设置，复用编辑账号的备注、调度和分组约束
+/// 导入设置复用编辑账号的名称、备注、调度和分组约束
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct AccountImportSettingsRequest {
+    pub name: Option<String>,
     pub notes: Option<String>,
     pub enabled: bool,
     #[serde(deserialize_with = "deserialize_required_nullable")]
@@ -33,6 +34,9 @@ pub struct AccountImportSettingsRequest {
 
 impl AccountImportSettingsRequest {
     fn validate(&self) -> Result<(), WireValidationError> {
+        if let Some(name) = &self.name {
+            validate_account_name(name.trim())?;
+        }
         validate_account_notes(self.notes.as_deref())?;
         parse_concurrency_limit(self.concurrency_limit)?;
         parse_account_weight(self.weight)?;
@@ -44,6 +48,10 @@ impl AccountImportSettingsRequest {
         self,
     ) -> Result<gateway_admin::model::accounts::AccountImportSettings, WireValidationError> {
         Ok(gateway_admin::model::accounts::AccountImportSettings {
+            name: self
+                .name
+                .map(|name| name.trim().to_owned())
+                .filter(|name| !name.is_empty()),
             notes: self.notes,
             enabled: self.enabled,
             concurrency_limit: parse_concurrency_limit(self.concurrency_limit)?,

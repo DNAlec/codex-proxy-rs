@@ -91,7 +91,7 @@ const additionalEntryCount = computed(() => Math.max(summaryEntries.value.length
         <span class="truncate text-[10px] font-bold text-z-text-quaternary">{{ usageWindowLabels[account.usage.windowKind] }}</span>
         <AccountCapacityIndicator :capacity="account.capacity" @show-details="emit('showConcurrency')" />
       </div>
-      <div class="h-1 w-full rounded-full bg-z-border-secondary" aria-hidden="true" />
+      <div class="h-1 w-full rounded-full bg-z-success" aria-hidden="true" />
     </div>
     <div v-else class="flex min-w-0 items-end gap-2">
       <!-- 共用列轨道为容量留位，进度条仍铺满整行，容量标记独立于额度弹层 -->

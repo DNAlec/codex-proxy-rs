@@ -314,6 +314,7 @@
       "selectAccountPlatform": "選擇賬號平臺",
       "accountPlatform": "賬號平臺",
       "maximumWordsOptional": "最多 500 字，可不填",
+      "namePlaceholder": "留空保留原名稱，僅單賬號導入生效",
       "copyAccount": "複製賬號",
       "accountCopied": "賬號已複製",
       "howToAddAccount": "賬號添加方式",

@@ -19,9 +19,200 @@ use gateway_core::{
 };
 use std::{
     collections::BTreeMap,
-    sync::{Arc, Mutex},
-    time::SystemTime,
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicUsize, Ordering},
+    },
+    time::{Duration, SystemTime},
 };
+
+#[tokio::test]
+async fn manual_and_periodic_refreshes_share_capacity_and_release_it_after_failure_or_cancellation()
+{
+    let providers = ["openai", "xai"].map(|kind| {
+        let mut provider = UnavailableProvider::new(kind);
+        provider.peer_enabled = true;
+        Arc::new(provider) as Arc<dyn ProviderAdmin>
+    });
+    let registry = ProviderAdminRegistry::new(providers).unwrap();
+    let records = (0..100)
+        .map(|index| {
+            account(
+                &format!("acct_{index}"),
+                if index % 2 == 0 { "openai" } else { "xai" },
+                "peer_test",
+            )
+        })
+        .collect::<Vec<_>>();
+    let accounts = Arc::new(TestAccounts {
+        accounts: Mutex::new(records.clone()),
+        records: Mutex::default(),
+        failed_provider: None,
+    });
+    let transport = Arc::new(GatedTransport::new());
+    let mut bundle = initialize_peer_upstream(accounts, &registry, transport.clone()).unwrap();
+    let service = bundle.service();
+    let mut requests = Vec::new();
+    for record in &records[..20] {
+        let service = service.clone();
+        let id = record.id().clone();
+        requests.push(tokio::spawn(
+            async move { service.refresh_quota(&id).await },
+        ));
+    }
+    transport.wait_for_requests(4).await;
+    let WorkerContribution::Registration(worker) = bundle.take_worker_contributions().remove(0)
+    else {
+        panic!("scheduled worker")
+    };
+    let worker = tokio::spawn(async move {
+        let WorkerRunnable::Scheduled { task, .. } = worker.runnable else {
+            panic!("scheduled worker")
+        };
+        task.run_cycle(WorkerCycleContext::new(
+            worker.id,
+            None,
+            CancellationToken::new(),
+        ))
+        .await
+    });
+    assert!(
+        tokio::time::timeout(Duration::from_millis(50), transport.wait_for_requests(5))
+            .await
+            .is_err()
+    );
+
+    requests.remove(0).abort();
+    transport.wait_for_requests(5).await;
+    transport.gate.add_permits(100);
+    tokio::time::timeout(Duration::from_secs(5), async {
+        for (index, request) in requests.into_iter().enumerate() {
+            let result = request.await.unwrap();
+            assert_eq!(result.is_err(), index == 0);
+        }
+        worker.await.unwrap().unwrap();
+    })
+    .await
+    .expect("all queued refreshes complete");
+    assert_eq!(transport.peak.load(Ordering::SeqCst), 4);
+    assert_eq!(transport.active.load(Ordering::SeqCst), 0);
+    assert_eq!(transport.started_count.load(Ordering::SeqCst), 100);
+}
+
+#[tokio::test]
+async fn queued_refresh_reads_current_account_after_capacity_becomes_available() {
+    let mut provider = UnavailableProvider::new("openai");
+    provider.peer_enabled = true;
+    let registry =
+        ProviderAdminRegistry::new([Arc::new(provider) as Arc<dyn ProviderAdmin>]).unwrap();
+    let records = (0..5)
+        .map(|index| account(&format!("acct_{index}"), "openai", "peer_test"))
+        .collect::<Vec<_>>();
+    let accounts = Arc::new(TestAccounts {
+        accounts: Mutex::new(records.clone()),
+        records: Mutex::default(),
+        failed_provider: None,
+    });
+    let transport = Arc::new(GatedTransport::new());
+    let bundle = initialize_peer_upstream(accounts.clone(), &registry, transport.clone()).unwrap();
+    let service = bundle.service();
+    let mut requests = Vec::new();
+    for record in &records[..4] {
+        let service = service.clone();
+        let id = record.id().clone();
+        requests.push(tokio::spawn(
+            async move { service.refresh_quota(&id).await },
+        ));
+    }
+    transport.wait_for_requests(4).await;
+    let queued = tokio::spawn(async move { service.refresh_quota(records[4].id()).await });
+    assert!(
+        tokio::time::timeout(Duration::from_millis(50), transport.wait_for_requests(5))
+            .await
+            .is_err()
+    );
+    accounts
+        .accounts
+        .lock()
+        .unwrap()
+        .retain(|account| account.id().as_str() != "acct_4");
+    transport.gate.add_permits(4);
+    for request in requests {
+        let _result = request.await.unwrap();
+    }
+    assert!(
+        tokio::time::timeout(Duration::from_secs(1), queued)
+            .await
+            .unwrap()
+            .unwrap()
+            .is_err()
+    );
+    assert_eq!(transport.started_count.load(Ordering::SeqCst), 4);
+}
+
+struct GatedTransport {
+    gate: tokio::sync::Semaphore,
+    started: tokio::sync::Notify,
+    started_count: AtomicUsize,
+    active: AtomicUsize,
+    peak: AtomicUsize,
+    success: TestTransport,
+}
+
+impl GatedTransport {
+    fn new() -> Self {
+        Self {
+            gate: tokio::sync::Semaphore::new(0),
+            started: tokio::sync::Notify::new(),
+            started_count: AtomicUsize::new(0),
+            active: AtomicUsize::new(0),
+            peak: AtomicUsize::new(0),
+            success: TestTransport(Mutex::default()),
+        }
+    }
+
+    async fn wait_for_requests(&self, count: usize) {
+        tokio::time::timeout(Duration::from_secs(1), async {
+            loop {
+                let notified = self.started.notified();
+                if self.started_count.load(Ordering::SeqCst) >= count {
+                    return;
+                }
+                notified.await;
+            }
+        })
+        .await
+        .expect("refresh reached transport");
+    }
+}
+
+struct ActiveFetch<'a>(&'a AtomicUsize);
+
+impl Drop for ActiveFetch<'_> {
+    fn drop(&mut self) {
+        self.0.fetch_sub(1, Ordering::SeqCst);
+    }
+}
+
+#[async_trait]
+impl PeerTransport for GatedTransport {
+    async fn fetch(
+        &self,
+        account: &ProviderAccount,
+        connection: &PeerConnection,
+    ) -> Result<Vec<u8>, PeerFetchFailure> {
+        let active = self.active.fetch_add(1, Ordering::SeqCst) + 1;
+        let _active = ActiveFetch(&self.active);
+        self.peak.fetch_max(active, Ordering::SeqCst);
+        self.started_count.fetch_add(1, Ordering::SeqCst);
+        self.started.notify_one();
+        self.gate.acquire().await.unwrap().forget();
+        if account.id().as_str() == "acct_1" {
+            return Err(UpstreamInfoFailure::Unavailable.into());
+        }
+        self.success.fetch(account, connection).await
+    }
+}
 
 #[tokio::test]
 async fn discovery_uses_provider_capabilities_and_publishes_neutral_signals() {

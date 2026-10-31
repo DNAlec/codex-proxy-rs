@@ -44,28 +44,22 @@ pub(super) async fn publish_credentials_and_observe_quota(
                 rolling_usage: None,
             };
             let result = if let Some(peer) = peer.as_deref() {
-                let details = match required_credential(
-                    accounts.as_ref(),
-                    provider.provider_kind(),
-                    &account_id,
-                    "initial quota observation",
-                )
-                .await
-                {
-                    Ok(details) => details,
+                let account = match accounts.load_account_record(&account_id).await {
+                    Ok(Some(account)) => account,
+                    Ok(None) => continue,
                     Err(error) => {
                         tracing::warn!(request_id, account_id = %account_id, error = %error, "initial quota account lookup failed");
                         continue;
                     }
                 };
-                if !details.credential.enabled {
+                if !account.enabled || &account.provider_kind != provider.provider_kind() {
                     continue;
                 }
                 // 首查与手动刷新共用认证能力分派，互联协议由 Admin 解释
                 super::peer_link::upstream::read_quota(
                     Some(peer),
                     provider.as_ref(),
-                    &details.credential,
+                    &account,
                     request,
                 )
                 .await

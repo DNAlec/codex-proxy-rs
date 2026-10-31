@@ -1118,6 +1118,15 @@ pub(super) async fn import_provider_accounts_in_transaction(
         if let Some(notes) = settings.notes.as_deref() {
             update_provider_account_notes_in_transaction(transaction, &unique_ids, notes).await?;
         }
+        if command.accounts.len() == 1
+            && let Some(name) = settings
+                .name
+                .as_deref()
+                .map(str::trim)
+                .filter(|name| !name.is_empty())
+        {
+            update_provider_account_name_in_transaction(transaction, &unique_ids, name).await?;
+        }
     }
     append_admin_audit_event_in_transaction(transaction, command.audit, revision).await?;
     Ok(ProviderAccountAdminImport {

@@ -1159,6 +1159,13 @@ impl ClientKeyVerifier for UnusedClientKeyVerifier {
 
 #[async_trait]
 impl AccountStore for UnusedStore {
+    async fn load_account_record(
+        &self,
+        _: &gateway_core::account::ProviderAccountId,
+    ) -> AdminStoreResult<Option<gateway_admin::model::accounts::AccountRecord>> {
+        Err(unavailable("account"))
+    }
+
     async fn account_exists(&self, id: &str) -> AdminStoreResult<bool> {
         Ok(self
             .account

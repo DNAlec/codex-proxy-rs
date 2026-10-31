@@ -162,6 +162,12 @@ pub trait AccountStore:
 
     async fn account_exists(&self, account_id: &str) -> AdminStoreResult<bool>;
 
+    /// 只读取账号记录，不加载运行配置、分组或额度展示
+    async fn load_account_record(
+        &self,
+        account_id: &gateway_core::account::ProviderAccountId,
+    ) -> AdminStoreResult<Option<crate::model::accounts::AccountRecord>>;
+
     async fn load_account_usage(
         &self,
         range: TimeRange,

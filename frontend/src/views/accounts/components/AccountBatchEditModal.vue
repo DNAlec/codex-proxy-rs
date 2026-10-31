@@ -39,7 +39,9 @@ const form = computed(() => ({
   proxyMode: proxyMode.value,
   proxyId: proxyId.value,
 }))
-const rules = useAccountSettingsFormRules(() => form.value, () => props.editedFields)
+const rules = useAccountSettingsFormRules(() => form.value, {
+  editedFields: () => props.editedFields,
+})
 
 watch(open, () => formRef.value?.clearValidate())
 

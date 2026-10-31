@@ -1557,6 +1557,7 @@ async fn account_notes_round_trip_and_survive_import_and_scheduling_updates() {
             },
             accounts: vec![account("acct_notes", "notes-user")],
             settings: Some(gateway_admin::model::accounts::AccountImportSettings {
+                name: None,
                 notes: None,
                 enabled: true,
                 concurrency_limit: None,
@@ -2120,6 +2121,7 @@ async fn authorization_create_returns_existing_account_id_when_identity_is_upser
                 )
                 .unwrap(),
                 settings: Some(gateway_admin::model::accounts::AccountImportSettings {
+                    name: None,
                     notes: Some("  OAuth 新建备注  ".to_owned()),
                     model_access: Default::default(),
                     enabled: false,
@@ -3538,6 +3540,7 @@ async fn account_import_settings_apply_atomically_to_new_and_existing_identities
     .await
     .expect("seed group");
     let settings = AccountImportSettings {
+        name: None,
         notes: Some("  批量新建\n团队备用  ".to_owned()),
         model_access: Default::default(),
         enabled: false,

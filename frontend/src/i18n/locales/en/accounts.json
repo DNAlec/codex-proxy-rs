@@ -314,6 +314,7 @@
       "selectAccountPlatform": "Select account platform",
       "accountPlatform": "Account platform",
       "maximumWordsOptional": "Maximum 500 words, optional",
+      "namePlaceholder": "Optional, applies only when importing one account",
       "copyAccount": "Copy account",
       "accountCopied": "Account copied",
       "howToAddAccount": "How to add an account",
