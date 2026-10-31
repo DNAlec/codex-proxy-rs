@@ -117,9 +117,6 @@ impl StartAccountAuthorizationRequest {
     pub fn validate(&self) -> Result<(), WireValidationError> {
         parse_provider(&self.provider)?;
         validate_account_name(&self.name)?;
-        if self.account_id.is_none() && self.name.trim().is_empty() {
-            return Err(WireValidationError::new("name"));
-        }
         if let Some(account_id) = self.account_id.as_deref() {
             require_account_id(account_id, "accountId")?;
         }
@@ -141,7 +138,7 @@ impl StartAccountAuthorizationRequest {
             provider,
             StartAuthorization {
                 context,
-                name: self.name,
+                name: self.name.trim().to_owned(),
                 reauthorization,
                 outbound_proxy: super::wire::proxy_selection(
                     self.outbound_proxy_id,

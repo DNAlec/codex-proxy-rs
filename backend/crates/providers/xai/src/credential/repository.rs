@@ -843,7 +843,7 @@ fn validate_scope(scope: &str) -> Result<(), GrokCredentialRepositoryError> {
 }
 
 fn validate_name(value: &str) -> Result<(), GrokCredentialRepositoryError> {
-    if value.trim().is_empty()
+    if (!value.is_empty() && value.trim().is_empty())
         || value.len() > MAX_NAME_BYTES
         || value.chars().any(char::is_control)
     {

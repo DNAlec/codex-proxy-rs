@@ -184,8 +184,7 @@ impl CodexPendingAuthorization {
         if !valid_text(&pending.flow_id)
             || !valid_text(&pending.owner_ref)
             || !valid_text(&pending.started_request_ref)
-            || !(valid_text(&pending.name)
-                || pending.name.is_empty() && pending.reauthorization.is_some())
+            || !(valid_text(&pending.name) || pending.name.is_empty())
             || pending.expires_at <= Utc::now()
             || !valid_secret(pending.state.expose_secret())
             || !valid_secret(pending.nonce.expose_secret())
@@ -590,7 +589,7 @@ impl CodexOAuthAdminService {
         reauthorization: Option<ProviderAccountId>,
         installation_id: String,
     ) -> Result<CodexOAuthAuthorizationStarted, CodexOAuthAdminError> {
-        if !(valid_text(&name) || name.is_empty() && reauthorization.is_some()) {
+        if !(valid_text(&name) || name.is_empty()) {
             return Err(CodexOAuthAdminError::InvalidInput);
         }
         let expires_at = Utc::now()

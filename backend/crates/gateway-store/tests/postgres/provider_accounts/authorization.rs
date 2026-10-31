@@ -10,6 +10,36 @@ use super::{
 };
 
 #[tokio::test]
+async fn authorization_persists_an_unnamed_account_with_its_email() {
+    let Some(database) = TestDatabase::create("authorization_unnamed").await else {
+        return;
+    };
+    let store = admin_account_store(&database.pool);
+    let mut prepared = credential("acct_unnamed", "unnamed-user");
+    prepared.name.clear();
+    prepared.email = Some("identity@example.com".into());
+    let (authorization, context) = command(prepared);
+    let result = store
+        .commit_authorization(authorization, &context)
+        .await
+        .unwrap();
+    let account = store
+        .load_account(
+            result.result.account_id.as_str(),
+            AccountRuntimeSnapshot::default(),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(account.account.name, "");
+    assert_eq!(
+        account.account.email.as_deref(),
+        Some("identity@example.com")
+    );
+    database.close().await;
+}
+
+#[tokio::test]
 async fn concurrent_authorization_retries_share_one_account_write_and_one_receipt() {
     let Some(database) = TestDatabase::create("authorization_receipt_race").await else {
         return;

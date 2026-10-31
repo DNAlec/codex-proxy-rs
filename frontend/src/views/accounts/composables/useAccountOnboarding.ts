@@ -5,7 +5,7 @@ import { useAsyncAction } from '@/composables/useAsyncAction'
 import { t } from '@/i18n'
 import { notification as ZNotification } from '@/utils/notification'
 import { errorMessage, generateRequestId } from '@/utils/operation'
-import { formatProviderLabel, isSupportedProvider } from '@/utils/providers'
+import { isSupportedProvider } from '@/utils/providers'
 import { accountCreateProvider, accountCreateSourceKey, accountImportModes, accountImportSettings, emptyAccountCreateForm } from '../utils/accountCreate'
 import { accountImportBatches, accountImportDocuments, mixedImportDocuments } from '../utils/accountImport'
 import { emptyApiKeyAccountForm } from '../utils/upstreamApiKey'
@@ -134,9 +134,7 @@ export function useAccountOnboarding(options: {
       await authorization.start({
         start: {
           provider,
-          name: account?.name || account?.email || t('accounts.onboarding.accountName', {
-            provider: formatProviderLabel(provider),
-          }),
+          name: account?.name ?? '',
           accountId: account?.id,
           outboundProxyId: account
             ? undefined

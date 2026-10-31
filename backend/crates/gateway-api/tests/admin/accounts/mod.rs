@@ -768,6 +768,24 @@ mod actions {
     }
 
     #[test]
+    fn authorization_accepts_optional_names_with_the_same_text_limits() {
+        for name in ["", " ", "My account"] {
+            let request: StartAccountAuthorizationRequest = serde_json::from_value(json!({
+                "provider": "openai", "name": name
+            }))
+            .expect("decode authorization");
+            assert!(request.validate().is_ok());
+        }
+        for name in ["bad\nname".to_owned(), "x".repeat(513)] {
+            let request: StartAccountAuthorizationRequest = serde_json::from_value(json!({
+                "provider": "openai", "name": name
+            }))
+            .expect("decode authorization");
+            assert_eq!(request.validate().unwrap_err().field(), "name");
+        }
+    }
+
+    #[test]
     fn credential_recovery_requests_should_not_accept_client_revision_fences() {
         let authorization: StartAccountAuthorizationRequest = serde_json::from_value(json!({
             "provider": "openai",

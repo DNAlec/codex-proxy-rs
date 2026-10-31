@@ -18,6 +18,8 @@ const emit = defineEmits<{ showConcurrency: [] }>()
 
 const { t } = useI18n({ useScope: 'global' })
 
+const localUsageOnly = computed(() => props.account.authenticationKind === 'api_key' && !props.account.upstream?.discovered)
+
 // 互联列表只展示此 Key 的消费限额，池内各账号的百分比不能代表整个上游
 const quotaWindows = computed(() => props.account.upstream?.discovered
   ? props.account.quota.windows.filter(window => window.amount)
@@ -57,11 +59,11 @@ const additionalEntryCount = computed(() => Math.max(summaryEntries.value.length
 <template>
   <div class="box-border grid min-h-16.5 w-full min-w-0 content-center gap-1.5 py-1.5">
     <div
-      v-if="hasTokenUsage || currentUsageWindow"
+      v-if="localUsageOnly || hasTokenUsage || currentUsageWindow"
       class="flex min-w-0 items-baseline justify-between gap-2 leading-none"
     >
       <span
-        v-if="hasTokenUsage"
+        v-if="localUsageOnly || hasTokenUsage"
         class="flex min-w-0 items-baseline gap-1 font-mono tabular-nums"
         :title="summaryValue.title"
       >
@@ -84,7 +86,14 @@ const additionalEntryCount = computed(() => Math.max(summaryEntries.value.length
       </span>
     </div>
 
-    <div class="flex min-w-0 items-end gap-2">
+    <div v-if="localUsageOnly" class="grid min-w-0 gap-1.5">
+      <div class="flex min-w-0 items-start justify-between gap-2 leading-3">
+        <span class="truncate text-[10px] font-bold text-z-text-quaternary">{{ usageWindowLabels[account.usage.windowKind] }}</span>
+        <AccountCapacityIndicator :capacity="account.capacity" @show-details="emit('showConcurrency')" />
+      </div>
+      <div class="h-1 w-full rounded-full bg-z-border-secondary" aria-hidden="true" />
+    </div>
+    <div v-else class="flex min-w-0 items-end gap-2">
       <!-- 共用列轨道为容量留位，进度条仍铺满整行，容量标记独立于额度弹层 -->
       <div class="grid min-w-0 flex-1 grid-cols-[minmax(0,1fr)_auto] gap-x-2">
         <AccountQuotaSummaryEntry

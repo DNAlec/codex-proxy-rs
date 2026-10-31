@@ -29,16 +29,30 @@ const props = withDefaults(
   },
 )
 
-const displayTitle = computed(() => accountIdentityLabel(props.account))
+const emailText = computed(() => props.account.email?.trim())
+const displayTitle = computed(() => {
+  const label = accountIdentityLabel(props.account)
+  return props.account.authenticationKind !== 'api_key' && label === emailText.value
+    ? label.split('@')[0]
+    : label
+})
 
 const visibleNotes = computed(() => props.showNotes ? props.account.notes : undefined)
 
 const identityTitle = computed(() => {
-  const email = props.account.email?.trim()
+  const email = emailText.value
   return email && email !== displayTitle.value
     ? `${displayTitle.value}\n${email}`
     : displayTitle.value
 })
+
+const secondaryText = computed(() => props.account.authenticationKind !== 'api_key' && emailText.value !== displayTitle.value
+  ? emailText.value
+  : undefined)
+
+const secondaryClass = computed(() => props.size === 'lg'
+  ? 'mt-1 text-z-sm text-z-text-secondary'
+  : 'mt-0.5 font-mono text-z-xs text-z-text-quaternary')
 
 const initial = computed(() => displayTitle.value.slice(0, 1).toUpperCase())
 
@@ -89,6 +103,9 @@ const avatarToneClass = computed(() => {
         <AccountPlanBadge v-if="showPlan" :upstream="account.upstream" :authentication-kind="account.authenticationKind" :plan-type="account.planType" :plan-type-display="account.planTypeDisplay" :size="metaSize" />
       </div>
       <AccountNotesPopover v-else-if="visibleNotes" :notes="visibleNotes" class="mt-0.5" />
+      <div v-else-if="secondaryText" class="truncate font-emphasis" :class="secondaryClass">
+        {{ secondaryText }}
+      </div>
     </div>
   </div>
 </template>

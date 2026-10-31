@@ -355,7 +355,6 @@
       "importTasksCreated": "已創建 {submitted} 個導入任務",
       "importTaskCreated": "導入任務已創建",
       "partialSubmission": "部分導入任務已創建，保持輸入不變重試可繼續提交",
-      "accountName": "{provider} 賬號",
       "failedToStartAuthorization": "啓動授權失敗"
     },
     "importTasks": {

@@ -665,6 +665,12 @@ CPR_BUILD_TIME="$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
 docker compose -f deploy/compose.yaml build codex-proxy-rs
 ```
 
+### 账号名称迁移
+
+OAuth 账号仍使用默认授权名称（如「Codex 账号」「OpenAI 账号」「xAI 账号」）且保存了邮箱时，
+升级会清空默认名称，账号列表按邮箱前缀和完整邮箱分两行展示。
+自定义名称、已有改名审计记录的账号、无邮箱账号及 API Key 名称保留原值
+
 ### 错误保护配置升级
 
 使用 `accountAutoFreeze*` 运行参数的部署升级时，数据库迁移删除全部旧保护设置，不转换规则或继承参数。

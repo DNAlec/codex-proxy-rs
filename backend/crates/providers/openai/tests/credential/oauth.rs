@@ -157,6 +157,13 @@ fn id_token(payload: serde_json::Value) -> String {
 async fn complete(
     id_token: String,
 ) -> Result<(CompletedCodexOAuthCredential, String, String), CodexOAuthAdminError> {
+    complete_with_name(id_token, "new OAuth account").await
+}
+
+async fn complete_with_name(
+    id_token: String,
+    name: &str,
+) -> Result<(CompletedCodexOAuthCredential, String, String), CodexOAuthAdminError> {
     let pending_store = Arc::new(PendingStore::default());
     let service = CodexOAuthAdminService::new(
         pending_store.clone(),
@@ -167,7 +174,13 @@ async fn complete(
     );
     let started = service
         .start_authorization(StartCodexOAuthAuthorization {
-            mutation: mutation(),
+            mutation: PendingAuthorizationMutation::new(
+                ProviderKind::new("openai").expect("provider"),
+                AuthorizationMutationTarget::Create {
+                    name: name.to_owned(),
+                },
+                mutation().owner_binding().clone(),
+            ),
         })
         .await
         .expect("start OAuth authorization");
@@ -461,6 +474,23 @@ async fn repeated_reauthorization_preserves_surface_id_with_a_cleared_name() {
     }
 
     assert_eq!(surface_ids[0], surface_ids[1]);
+}
+
+#[tokio::test]
+async fn first_exchange_preserves_optional_local_name_and_upstream_email() {
+    for name in ["", "My account"] {
+        let (credential, _, _) = complete_with_name(
+            id_token(serde_json::json!({ "email": "identity@example.com" })),
+            name,
+        )
+        .await
+        .expect("complete authorization with optional name");
+        let CompletedCodexOAuthCredential::Create(account) = credential else {
+            panic!("expected account creation");
+        };
+        assert_eq!(account.account.name(), name);
+        assert_eq!(account.account.email(), Some("identity@example.com"));
+    }
 }
 
 #[tokio::test]
