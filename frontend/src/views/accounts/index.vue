@@ -33,6 +33,7 @@ import { useAccountMutations } from './composables/useAccountMutations'
 import { useAccountsQuery } from './composables/useAccountsQuery'
 import { useAccountsTable } from './composables/useAccountsTable'
 import { accountColumns } from './constants'
+import { accountIdentityLabel } from './utils/accountIdentity'
 
 const { t } = useI18n({ useScope: 'global' })
 
@@ -500,10 +501,7 @@ const {
       @confirm="handleDelete"
     >
       <p class="m-0">
-        {{ t('accounts.page.delete', { value: pendingDeleteAccount?.email
-          || pendingDeleteAccount?.accountId
-          || pendingDeleteAccount?.id
-          || t('accounts.page.thisAccount') }) }}
+        {{ t('accounts.page.delete', { value: pendingDeleteAccount ? accountIdentityLabel(pendingDeleteAccount) : t('accounts.page.thisAccount') }) }}
       </p>
     </ZConfirmDialog>
   </div>
