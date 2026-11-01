@@ -4,51 +4,61 @@ use super::*;
 
 #[tokio::test]
 async fn network_failure_preserves_native_causes_without_the_request_url() {
-    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-    let address = listener.local_addr().unwrap();
-    drop(listener);
-    let store = Arc::new(MemoryAccountStore::default());
-    create_account(&store, "acct_provider_contract").await;
-    let provider = provider_with_base_url_and_retry_budget(
-        &store,
-        format!("http://{address}/PRIVATE_REQUEST_PATH"),
-        0,
-    );
-    let mut stream = provider
-        .execute(
-            planned_request("openai", http_generate_operation()),
-            context("req_native_cause", CancellationToken::new()),
-        )
-        .await
-        .unwrap();
-    let error = loop {
-        match stream.next().await {
-            Some(Ok(_)) => {}
-            Some(Err(error)) => break error,
-            None => panic!("connection failure must surface"),
+    for use_websocket in [false, true] {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        drop(listener);
+        let store = Arc::new(MemoryAccountStore::default());
+        create_account(&store, "acct_provider_contract").await;
+        let provider = provider_with_base_url_and_retry_budget(
+            &store,
+            format!("http://{address}/PRIVATE_REQUEST_PATH"),
+            0,
+        );
+        let operation = if use_websocket {
+            capacity_websocket_operation()
+        } else {
+            http_generate_operation()
+        };
+        let mut stream = provider
+            .execute(
+                planned_request("openai", operation),
+                context("req_native_cause", CancellationToken::new()),
+            )
+            .await
+            .unwrap();
+        let error = loop {
+            match stream.next().await {
+                Some(Ok(_)) => {}
+                Some(Err(error)) => break error,
+                None => panic!("connection failure must surface"),
+            }
+        };
+        assert_eq!(error.send_state(), UpstreamSendState::NotSent);
+        let details = error.error_details().unwrap();
+        assert!(!details.contains("PRIVATE_REQUEST_PATH"));
+        let details: Value = serde_json::from_str(&details).unwrap();
+        if !use_websocket {
+            assert_eq!(details["redacted"], true);
         }
-    };
-    assert_eq!(error.send_state(), UpstreamSendState::NotSent);
-    let details = error.error_details().unwrap();
-    assert!(!details.contains("PRIVATE_REQUEST_PATH"));
-    let details: Value = serde_json::from_str(&details).unwrap();
-    assert_eq!(details["redacted"], true);
-    let mut source = std::error::Error::source(&error);
-    let mut saw_native = false;
-    while let Some(cause) = source {
-        if let Some(http) = cause.downcast_ref::<reqwest::Error>() {
-            assert!(http.url().is_none());
-            assert!(http.is_connect());
+        let mut source = std::error::Error::source(&error);
+        let mut saw_native = false;
+        while let Some(cause) = source {
+            if let Some(http) = cause.downcast_ref::<reqwest::Error>() {
+                assert!(http.url().is_none());
+                assert!(http.is_connect());
+            }
+            if let Some(io) = cause.downcast_ref::<std::io::Error>() {
+                saw_native |= io.kind() == std::io::ErrorKind::ConnectionRefused
+                    && io.raw_os_error().is_some();
+            }
+            source = cause.source();
         }
-        if let Some(io) = cause.downcast_ref::<std::io::Error>() {
-            saw_native = io.kind() == std::io::ErrorKind::ConnectionRefused;
-        }
-        source = cause.source();
+        assert!(
+            saw_native,
+            "the original I/O cause must survive Provider mapping"
+        );
     }
-    assert!(
-        saw_native,
-        "the original I/O cause must survive Provider mapping"
-    );
 }
 
 #[tokio::test(flavor = "current_thread")]

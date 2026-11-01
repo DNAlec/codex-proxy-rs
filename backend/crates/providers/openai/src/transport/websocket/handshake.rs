@@ -364,8 +364,19 @@ async fn connect_tcp(host: &str, port: u16) -> Result<tokio::net::TcpStream, tun
         .call(uri)
         .await
         .map(|stream| stream.into_inner())
-        .map_err(|_| {
-            tungstenite::Error::Io(std::io::Error::other("account WebSocket connection failed"))
+        .map_err(|error| {
+            // 保留连接器的原始原因链与 I/O 类型，供发送前失败诊断使用
+            let mut cause: &(dyn std::error::Error + 'static) = &error;
+            let kind = loop {
+                if let Some(io) = cause.downcast_ref::<std::io::Error>() {
+                    break io.kind();
+                }
+                match cause.source() {
+                    Some(source) => cause = source,
+                    None => break std::io::ErrorKind::Other,
+                }
+            };
+            tungstenite::Error::Io(std::io::Error::new(kind, error))
         })
 }
 
