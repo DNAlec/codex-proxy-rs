@@ -20,7 +20,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: security-${{ github.event.pull_request.head.repo.full_name || github.repository }}-${{ inputs.ref || github.head_ref || github.ref_name }}
+  group: security-${{ github.workflow }}-${{ inputs.ref || github.event.pull_request.head.repo.full_name || github.repository }}-${{ github.head_ref || github.ref_name }}
   cancel-in-progress: true
 
 jobs:
@@ -34,7 +34,7 @@ jobs:
           ref: ${{ inputs.ref || github.event.pull_request.head.sha || github.sha }}
 
       - name: Install cargo-audit
-        uses: taiki-e/install-action@1e29709c0ec63babbe8f266397a465f29a825f91 # v2.87.31
+        uses: taiki-e/install-action@682ce6c3c696a4cd5168a05f98e51aa02b877941 # v2.89.1
         with:
           tool: cargo-audit@0.22.2
           fallback: none

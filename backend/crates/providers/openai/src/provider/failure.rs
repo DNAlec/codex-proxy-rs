@@ -46,6 +46,7 @@ pub(super) struct MappedProviderFailure {
     /// 原始上游错误描述，仅在凭据错误状态下持久化
     pub(super) error_message: Option<String>,
     pub(super) cyber_policy_failure: bool,
+    pub(super) model_unsupported: bool,
     pub(super) set_cookie_headers: Vec<String>,
     pub(super) response_origin: Option<Url>,
     pub(super) rate_limit_headers: Vec<(String, String)>,
@@ -61,6 +62,7 @@ impl MappedProviderFailure {
             account_failure: None,
             error_message: None,
             cyber_policy_failure: false,
+            model_unsupported: false,
             set_cookie_headers: Vec::new(),
             response_origin: None,
             rate_limit_headers: Vec::new(),
@@ -159,6 +161,7 @@ pub(super) struct OpenAiFailureContext<'a> {
     pub(super) response_origin: &'a Url,
     pub(super) cyber_policy_scope: Option<&'a CodexCyberPolicyScope>,
     pub(super) allows_account_state_mutation: bool,
+    pub(super) upstream_model: Option<&'a UpstreamModelId>,
 }
 
 #[derive(Clone, Copy)]
@@ -308,6 +311,16 @@ pub(super) async fn apply_failure(
         return;
     }
     synchronize_passive_quota_headers(context.quota, account, &failure.rate_limit_headers).await;
+    if failure.model_unsupported
+        && let Some(model) = context.upstream_model
+        && let Err(error) = context
+            .selector
+            .record_model_unsupported(account, model)
+            .await
+    {
+        tracing::warn!(account_id = %account.id(), error = %error,
+            "Failed to persist OpenAI model availability cooldown");
+    }
     let needs_authoritative_quota_refresh = matches!(
         failure.account_failure,
         Some(CodexAccountFailure::QuotaExhausted | CodexAccountFailure::UsageLimitExhausted { .. })
@@ -352,12 +365,24 @@ pub(super) async fn apply_failure(
             )
             .await
     {
-        tracing::warn!(
-            account_id = %account.id(),
-            credential_revision = account.revision().get(),
-            error = %error,
-            "Failed to persist OpenAI response cookies"
-        );
+        match error {
+            // 失败响应同样受版本保护，不能重放旧 Cookie 覆盖较新的凭据
+            CredentialSelectionError::RevisionConflict(_) => {
+                tracing::debug!(
+                    account_id = %account.id(),
+                    credential_revision = account.revision().get(),
+                    "Skipped OpenAI response cookies after credential revision changed"
+                );
+            }
+            error => {
+                tracing::warn!(
+                    account_id = %account.id(),
+                    credential_revision = account.revision().get(),
+                    error = %error,
+                    "Failed to persist OpenAI response cookies"
+                );
+            }
+        }
     }
     // 探测只验证恢复，不能把探测自身的单请求并发当作业务负载证据
 }
@@ -366,8 +391,11 @@ pub(super) fn schedule_authoritative_quota_refresh_after_failure(
     quota: &Arc<CodexCredentialQuotaService>,
     account: &ProviderAccount,
 ) {
+    if !account.auto_use_quota_credits() {
+        return;
+    }
     // 限额错误可以确认账号状态，但 Responses 事件中的 used_percent 可能仍停在上一结算点
-    // usage 快照在后台补齐展示基线，不得撤销同一轮真实失败，也不能阻塞原始响应
+    // 后台查询可为后续请求确认点数，但不阻塞或重放原始请求
     // 随机等待 1–3 秒让上游结算再查询，避免多账号同时受限时补查完全同步；
     // 仍保持单次语义（一次 sleep + 一次查询），5 秒仅限制实际查询自身
     let quota = Arc::clone(quota);
@@ -461,12 +489,13 @@ pub(super) fn apply_websocket_recovery_policy(
         return;
     }
     // 明确账号拒绝走已有换号路径，业务瞬态失败走请求内退避，不消耗 WS 传输预算
-    if failure.error.replay_is_safe()
-        && (failure.account_failure.is_some()
-            || matches!(
-                failure.error.pre_delivery_retry(),
-                Some(gateway_core::error::PreDeliveryRetry::SameAccountTransientRetry { .. })
-            ))
+    if failure.model_unsupported
+        || (failure.error.replay_is_safe()
+            && (failure.account_failure.is_some()
+                || matches!(
+                    failure.error.pre_delivery_retry(),
+                    Some(gateway_core::error::PreDeliveryRetry::SameAccountTransientRetry { .. })
+                )))
     {
         tracing::warn!(
             request_id = context.request_id,
@@ -1072,6 +1101,7 @@ pub(super) fn profile_diagnostic(
     use crate::transport::profile::selection::ClientProfileError;
     let code = match error {
         ClientProfileError::Invalid => "request_profile_invalid",
+        ClientProfileError::InvalidInstallationSeed => "request_profile_installation_seed_invalid",
         ClientProfileError::InvalidUserAgent => "request_profile_user_agent_invalid",
         ClientProfileError::CompanionHeadersRequired => "request_profile_headers_required",
         ClientProfileError::CompanionHeadersConflict => "request_profile_headers_conflict",
@@ -1478,6 +1508,7 @@ pub(super) fn map_upstream_failure(
         ),
         error_message: failure.client_message,
         cyber_policy_failure,
+        model_unsupported: category == CodexFailureCategory::ModelUnsupported,
         // 普通 5xx 与未知流内错误不足以证明容量拒绝，不能用于冻结账号
         set_cookie_headers: failure.set_cookie_headers,
         response_origin: failure.response_origin,

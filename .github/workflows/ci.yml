@@ -37,6 +37,7 @@ jobs:
       frontend: ${{ github.event_name == 'workflow_dispatch' || steps.filter.outputs.frontend == 'true' }}
       container: ${{ github.event_name == 'workflow_dispatch' || steps.filter.outputs.container == 'true' }}
       source: ${{ github.event_name == 'workflow_dispatch' || steps.filter.outputs.source == 'true' }}
+      source_container: ${{ github.event_name == 'workflow_dispatch' || steps.filter.outputs.source_container == 'true' }}
     steps:
       - name: Validate requested revision
         if: github.event_name == 'workflow_dispatch'
@@ -97,10 +98,30 @@ jobs:
               - '.dockerignore'
               - 'release/version.yaml'
               - '.github/actions/verify-container/**'
-              - '.github/actions/cargo-cache/**'
+              - '.github/actions/build-binary/**'
+              - '.github/actions/build-frontend/**'
+              - '.github/scripts/toolchains.rb'
+              - '.github/scripts/package-release.rb'
+              - '.github/scripts/release-metadata.rb'
               - '.github/workflows/_container.yml'
               - '.github/workflows/ci.yml'
               - '!**/*.md'
+            source_container:
+              - 'deploy/Dockerfile'
+              - 'deploy/Dockerfile.dockerignore'
+              - '.dockerignore'
+              - 'backend/**/Cargo.toml'
+              - 'backend/Cargo.lock'
+              - 'backend/rust-toolchain.toml'
+              - 'backend/**/build.rs'
+              - 'backend/.cargo/**'
+              - 'frontend/package.json'
+              - 'frontend/pnpm-lock.yaml'
+              - 'frontend/pnpm-workspace.yaml'
+              - 'frontend/.npmrc'
+              - 'frontend/patches/**'
+              - '.github/workflows/_container.yml'
+              - '.github/workflows/ci.yml'
 
   quality:
     needs: changes
@@ -108,7 +129,8 @@ jobs:
     with:
       ref: ${{ needs.changes.outputs.ref }}
       run_backend: ${{ needs.changes.outputs.backend == 'true' }}
-      run_frontend: ${{ needs.changes.outputs.frontend == 'true' }}
+      # 预构建容器复用同一次前端检查产物，源码 Docker 构建仍独立验证
+      run_frontend: ${{ needs.changes.outputs.frontend == 'true' && (needs.changes.outputs.container != 'true' || needs.changes.outputs.source_container == 'true') }}
 
   container:
     needs: changes
@@ -119,6 +141,7 @@ jobs:
     uses: ./.github/workflows/_container.yml
     with:
       ref: ${{ needs.changes.outputs.ref }}
+      source_build: ${{ needs.changes.outputs.source_container == 'true' }}
 
   source-development:
     needs: changes
@@ -149,7 +172,11 @@ jobs:
           toolchain: ${{ steps.toolchains.outputs.rust }}
       - name: Check dependency pins
         run: |
-          ui_revision="$(git -C modules/ui rev-parse HEAD)"
+          # 源码联调使用发布依赖的固定提交，子模块开发指针可以独立推进
+          ui_revision="$(sed -nE 's@.*codeload.github.com/zyycn/codex-proxy-ui/tar.gz/([a-f0-9]{40}).*@\1@p' frontend/pnpm-lock.yaml | sort -u)"
+          [[ "$ui_revision" =~ ^[a-f0-9]{40}$ ]]
+          git -C modules/ui checkout --detach "$ui_revision"
+          test "$(git -C modules/ui rev-parse HEAD)" = "$ui_revision"
           for lockfile in frontend/pnpm-lock.yaml modules/plugins/examples/workbench/frontend/pnpm-lock.yaml; do
             locked_revision="$(sed -nE 's@.*codeload.github.com/zyycn/codex-proxy-ui/tar.gz/([a-f0-9]{40}).*@\1@p' "$lockfile" | sort -u)"
             if [ "$locked_revision" != "$ui_revision" ]; then
