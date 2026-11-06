@@ -10,6 +10,7 @@ use futures::{StreamExt, stream};
 use gateway_core::account::{
     CredentialRevision, CredentialState, OpaqueProviderData, ProviderAccount, ProviderAccountId,
 };
+use gateway_core::policy::ClientApiKeyId;
 use gateway_core::provider_ports::{
     ProviderCatalogCacheKey, ProviderCatalogCachePort, ProviderCatalogScope,
 };
@@ -29,6 +30,8 @@ use crate::transport::{CodexBackendClient, CodexCatalogModel, CodexRequestContex
 
 const MAX_RESPONSE_ETAG_BYTES: usize = 256;
 const PLAN_CATALOG_CACHE_TTL: Duration = Duration::from_secs(5 * 60);
+// 调度证据覆盖默认 15 分钟刷新周期及抖动，长期未刷新时恢复上游验证
+const SCHEDULING_CATALOG_MAX_AGE: Duration = Duration::from_secs(30 * 60);
 const MAX_CATALOG_FETCH_ATTEMPTS: usize = 3;
 const MAX_PLAN_CATALOG_MODELS: usize = 2_048;
 const MAX_CLIENT_CATALOGS: usize = 32;
@@ -225,6 +228,7 @@ struct CatalogCacheState {
 
 #[derive(PartialEq, Eq)]
 struct ClientCatalogKey {
+    client_key_id: Option<ClientApiKeyId>,
     account_id: ProviderAccountId,
     revision: CredentialRevision,
     plan: Option<String>,
@@ -330,6 +334,7 @@ impl CodexCredentialCatalogService {
     /// 同一账号/凭据版本/客户端版本的并发读取合并；原生正文仅保留在有界进程缓存
     pub async fn client_model_catalog(
         &self,
+        client_key_id: &ClientApiKeyId,
         scope: &FrozenAccountScope,
         client_version: &str,
     ) -> ClientCatalogResult {
@@ -358,7 +363,12 @@ impl CodexCredentialCatalogService {
                 let profile = request_profile.clone();
                 async move {
                     let result = self
-                        .cached_client_account_catalog(&account, client_version, profile)
+                        .cached_client_account_catalog(
+                            client_key_id,
+                            &account,
+                            client_version,
+                            profile,
+                        )
                         .await;
                     (account, result)
                 }
@@ -393,7 +403,12 @@ impl CodexCredentialCatalogService {
         let mut last_error = CodexCredentialCatalogError::NoEligibleCredential;
         for account in accounts.iter().take(MAX_CATALOG_FETCH_ATTEMPTS) {
             match self
-                .cached_client_account_catalog(account, client_version, request_profile.clone())
+                .cached_client_account_catalog(
+                    client_key_id,
+                    account,
+                    client_version,
+                    request_profile.clone(),
+                )
                 .await
             {
                 Ok(models) => {
@@ -422,11 +437,17 @@ impl CodexCredentialCatalogService {
 
     async fn cached_client_account_catalog(
         &self,
+        client_key_id: &ClientApiKeyId,
         account: &ProviderAccount,
         client_version: &str,
         profile: CodexWireProfile,
     ) -> ClientCatalogResult {
         let key = ClientCatalogKey {
+            // 无种子时沿用账号级目录缓存，启用后按 Key 隔离出站身份
+            client_key_id: profile
+                .installation_seed
+                .as_ref()
+                .map(|_| client_key_id.clone()),
             account_id: account.id().clone(),
             revision: account.revision(),
             plan: account.plan_type().map(str::to_owned),
@@ -469,7 +490,7 @@ impl CodexCredentialCatalogService {
                     CodexWireProfileState::new(profile),
                 );
                 let result = self
-                    .fetch_account_models(&client, account, Some(client_version))
+                    .fetch_account_models(&client, account, Some((client_key_id, client_version)))
                     .await
                     .map(|fetched| {
                         fetched
@@ -556,6 +577,41 @@ impl CodexCredentialCatalogService {
         snapshot
             .account_models(account)
             .map(|models| models.map(<[String]>::to_vec))
+    }
+
+    /// 有效目录约束账号模型资格，缺失目录或未知套餐继续交由上游判断
+    pub(crate) fn scheduling_exclusions(
+        &self,
+        accounts: &[ProviderAccount],
+        model: &str,
+        now: SystemTime,
+    ) -> BTreeSet<ProviderAccountId> {
+        let Ok(cache) = self.cache.read() else {
+            return BTreeSet::new();
+        };
+        let Some(snapshot) = cache.snapshot.as_ref().filter(|snapshot| {
+            now.duration_since(snapshot.observed_at)
+                .is_ok_and(|age| age < SCHEDULING_CATALOG_MAX_AGE)
+        }) else {
+            return BTreeSet::new();
+        };
+        // OAuth 按套餐共享，API Key 按账号与凭据版本隔离，不能借用其他来源的模型资格
+        let excluded_scopes = snapshot
+            .scope_catalogs
+            .iter()
+            .filter(|(scope, catalog)| {
+                scope.as_str() != "plan:unknown" && !catalog.models.iter().any(|id| id == model)
+            })
+            .map(|(scope, _)| scope)
+            .collect::<BTreeSet<_>>();
+        accounts
+            .iter()
+            .filter(|account| {
+                CodexCatalogScope::for_account(account)
+                    .is_ok_and(|scope| excluded_scopes.contains(&scope))
+            })
+            .map(|account| account.id().clone())
+            .collect()
     }
 
     /// 优先读取套餐目录 cache；缺失时才用当前账号所属套餐的有限候选集实时填充
@@ -789,7 +845,7 @@ impl CodexCredentialCatalogService {
         &self,
         client: &CodexBackendClient,
         account: &ProviderAccount,
-        client_version: Option<&str>,
+        client_identity: Option<(&ClientApiKeyId, &str)>,
     ) -> Result<FetchedAccountModels, CodexCredentialCatalogError> {
         tokio::time::timeout(MODEL_CATALOG_TIMEOUT, async {
             let credential = self
@@ -797,6 +853,14 @@ impl CodexCredentialCatalogService {
                 .load_runtime_credential(account)
                 .await
                 .map_err(|_| CodexCredentialCatalogError::InvalidCredentialData)?;
+            let installation_id = client_identity.map(|(key_id, _)| {
+                client.profile_state().effective_installation_id(
+                    key_id,
+                    account.id(),
+                    &credential.installation_id,
+                )
+            });
+            let client_version = client_identity.map(|(_, version)| version);
             let request_id = format!("catalog_{}", Uuid::now_v7().simple());
             let authorization = credential
                 .authentication
@@ -813,7 +877,7 @@ impl CodexCredentialCatalogService {
                         authorization.expose_secret(),
                         account.upstream_account_id(),
                         &request_id,
-                        None,
+                        installation_id.as_deref(),
                     ),
                     client_version,
                 )

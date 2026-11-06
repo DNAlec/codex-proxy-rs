@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { Account } from '@/api'
 
-import { useTableColumns, ZCard, ZCheckbox, ZConfirmDialog, ZPageHeader, ZPagination, ZTable, ZTableColumnSettings } from '@codex-proxy/ui'
+import { useTableColumns, ZCard, ZCheckbox, ZConfirmDialog, ZIconButton, ZPageHeader, ZPagination, ZTable, ZTableColumnSettings } from '@codex-proxy/ui'
 
 import { ChevronDown } from '@lucide/vue'
 import { ref, shallowRef } from 'vue'
@@ -272,17 +272,18 @@ const {
             @sort-change="handleSortChange"
           >
             <template #expander="{ row }">
-              <button
-                type="button"
-                class="inline-flex size-6 cursor-pointer items-center justify-center rounded-md border-0 bg-transparent text-z-text-secondary transition hover:bg-z-bg-text-hover hover:text-z-text"
-                :title="expandedAccountIds.has(row.id) ? t('accounts.page.collapseStatistics') : t('accounts.page.expandStatistics')"
+              <ZIconButton
+                size="small"
+                class="size-6! rounded-md! hover:bg-z-bg-text-hover!"
+                :aria-label="expandedAccountIds.has(row.id) ? t('accounts.page.collapseStatistics') : t('accounts.page.expandStatistics')"
+                :aria-expanded="expandedAccountIds.has(row.id)"
                 @click.stop="toggleExpanded(row.id)"
               >
                 <ChevronDown
                   class="size-3.5 transition-transform"
                   :class="expandedAccountIds.has(row.id) ? '' : '-rotate-90'"
                 />
-              </button>
+              </ZIconButton>
             </template>
 
             <template #header-selection>
@@ -368,7 +369,7 @@ const {
             </template>
 
             <template #expanded="{ row }">
-              <div class="grid items-stretch gap-3 p-4 lg:grid-cols-[1.05fr_2.45fr] xl:min-h-77">
+              <div class="grid items-stretch gap-3 p-4 lg:grid-cols-[1.05fr_2.45fr] xl:h-77.5">
                 <AccountQuotaPanel
                   :account="row"
                   :refreshing="refreshingQuotaAccountIds.has(row.id)"
