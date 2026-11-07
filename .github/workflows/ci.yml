@@ -178,13 +178,7 @@ jobs:
           git -C modules/ui fetch --depth=1 --no-tags origin "$ui_revision"
           git -C modules/ui checkout --detach "$ui_revision"
           test "$(git -C modules/ui rev-parse HEAD)" = "$ui_revision"
-          for lockfile in frontend/pnpm-lock.yaml modules/plugins/examples/workbench/frontend/pnpm-lock.yaml; do
-            locked_revision="$(sed -nE 's@.*codeload.github.com/zyycn/codex-proxy-ui/tar.gz/([a-f0-9]{40}).*@\1@p' "$lockfile" | sort -u)"
-            if [ "$locked_revision" != "$ui_revision" ]; then
-              echo "::error file=$lockfile::UI dependency must match modules/ui ($ui_revision)"
-              exit 1
-            fi
-          done
+          # 插件独立固定发布依赖，与当前 UI 源码的兼容性由下方构建验证
       - name: Install development dependencies
         run: |
           pnpm --dir modules/ui install --frozen-lockfile
