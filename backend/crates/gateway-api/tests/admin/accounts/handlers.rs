@@ -17,6 +17,7 @@ async fn connection_test_post_streams_custom_options_and_get_uses_defaults() {
     fixture.auth.insert_session("valid-session");
     let facts = AccountStatusFacts {
         enabled: true,
+        quota_paused: false,
         credential_state: CredentialState::Ready,
         access_token_expires_at: None,
         quota: QuotaState::unknown(),
@@ -57,6 +58,7 @@ async fn peer_refresh_uses_the_account_quota_endpoint_and_requires_admin() {
     fixture.auth.insert_session("valid-session");
     *fixture.account.lock().unwrap() = Some(account_page_item(
         AccountStatusFacts {
+            quota_paused: false,
             enabled: true,
             credential_state: CredentialState::Ready,
             access_token_expires_at: None,
@@ -114,6 +116,7 @@ async fn account_model_reads_and_refreshes_preserve_provider_observation_time() 
     let observed_at: DateTime<Utc> = "2026-09-12T08:00:00Z".parse().unwrap();
     *fixture.account.lock().unwrap() = Some(account_page_item(
         AccountStatusFacts {
+            quota_paused: false,
             enabled: true,
             credential_state: CredentialState::Ready,
             access_token_expires_at: None,
@@ -203,6 +206,7 @@ async fn account_proxy_binding_is_distinct_from_the_redacted_endpoint() {
     ] {
         let now = Utc::now();
         let facts = AccountStatusFacts {
+            quota_paused: false,
             enabled: true,
             credential_state: CredentialState::Ready,
             access_token_expires_at: None,
@@ -281,6 +285,7 @@ async fn account_cooldown_returns_an_instant_and_server_formatted_recovery() {
             let now = Utc::now();
             let until = seconds.map(|seconds| now + Duration::seconds(seconds));
             let facts = AccountStatusFacts {
+                quota_paused: false,
                 enabled: true,
                 credential_state: CredentialState::Ready,
                 access_token_expires_at: None,
@@ -365,6 +370,7 @@ async fn account_quota_refresh_time_uses_server_clock_and_deployment_timezone() 
         let now = Utc::now();
         *fixture.account.lock().unwrap() = Some(account_page_item(
             AccountStatusFacts {
+                quota_paused: false,
                 enabled: true,
                 credential_state: CredentialState::Ready,
                 access_token_expires_at: None,
@@ -378,7 +384,7 @@ async fn account_quota_refresh_time_uses_server_clock_and_deployment_timezone() 
         ));
         let future = now + Duration::days(1);
         let future_display = zone.local(future).format("%Y-%m-%d %H:%M:%S").to_string();
-        for (observed_at, expected, legacy) in [
+        for (observed_at, expected, display) in [
             (None, json!(null), "—"),
             (Some(now), json!({ "kind": "just_now" }), "刚刚"),
             (
@@ -398,6 +404,7 @@ async fn account_quota_refresh_time_uses_server_clock_and_deployment_timezone() 
             ),
         ] {
             *fixture.provider_quota.lock().unwrap() = Some(ProviderQuota {
+                paused_windows: Vec::new(),
                 upstream: None,
                 plan_type: None,
                 observed_at,
@@ -425,7 +432,7 @@ async fn account_quota_refresh_time_uses_server_clock_and_deployment_timezone() 
             let value: serde_json::Value = serde_json::from_slice(&body).unwrap();
             let quota = &value["data"]["items"][0]["quota"];
             assert_eq!(quota["refreshedAtRelative"], expected);
-            assert_eq!(quota["refreshedAtDisplay"], legacy);
+            assert_eq!(quota["refreshedAtDisplay"], display);
             let refreshed_at = quota["refreshedAt"]
                 .as_str()
                 .map(|value| DateTime::parse_from_rfc3339(value).unwrap().to_utc());
@@ -448,6 +455,8 @@ fn account_page_item(
     AccountPageItem {
         protection_rules: Vec::new(),
         account: AccountRecord {
+            quota_paused: false,
+            quota_settings: Default::default(),
             auto_use_quota_credits: false,
             outbound_proxy_id: None,
             outbound_proxy_enabled: true,
@@ -500,6 +509,7 @@ async fn account_usage_preserves_periods_cache_counts_and_missing_values() {
     fixture.auth.insert_session("valid-session");
     let now = Utc::now();
     let facts = AccountStatusFacts {
+        quota_paused: false,
         enabled: true,
         credential_state: CredentialState::Ready,
         access_token_expires_at: None,
@@ -783,6 +793,7 @@ async fn concurrency_details_require_admin_validate_paging_and_report_lease_time
     fixture.auth.insert_session("valid-session");
     *fixture.account.lock().unwrap() = Some(account_page_item(
         gateway_core::account::AccountStatusFacts {
+            quota_paused: false,
             enabled: true,
             credential_state: gateway_core::account::CredentialState::Ready,
             access_token_expires_at: None,

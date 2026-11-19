@@ -3,7 +3,6 @@ import { CheckCircle2, Clock3, Wifi, XCircle } from '@lucide/vue'
 import { clamp } from 'es-toolkit'
 import { computed, onBeforeUnmount, ref, shallowRef, watch } from 'vue'
 import { getAccountModels, refreshAccountModels, testAccountConnection } from '@/api'
-import { useIdSet } from '@/composables/useIdSet'
 import { useRequestState } from '@/composables/useRequestState'
 import { t } from '@/i18n'
 import { notification as ZNotification } from '@/utils/notification'
@@ -29,6 +28,7 @@ interface ConnectionTestLog {
   text: string
   tone: ConnectionTestLogTone
   detail: string
+  failureMessage?: string
 }
 
 interface ConnectionTestRequestPayload {
@@ -70,6 +70,7 @@ interface ConnectionTestFailureEvent {
   type: 'error'
   source?: ConnectionTestFailureSource
   gatewayErrorCode?: string
+  proxyHint?: string | null
   sendState?: ConnectionTestSendState | null
   error?: string
   providerErrorCode?: string | null
@@ -131,6 +132,16 @@ function parseConnectionTestEvent(raw: string): ConnectionTestEvent | null {
 }
 
 function connectionTestFailureText(event: ConnectionTestFailureEvent) {
+  if (event.source === 'provider' && event.sendState === 'not_sent') {
+    switch (event.proxyHint) {
+      case 'invalid_configuration': return t('accounts.connectionTest.errors.proxyInvalid')
+      case 'unreachable': return t('accounts.connectionTest.errors.proxyUnreachable')
+      case 'tunnel_failed': return t('accounts.connectionTest.errors.proxyTunnelFailed')
+      case 'check_proxy': return t('accounts.connectionTest.errors.checkProxy')
+    }
+    if (event.gatewayErrorCode === 'upstream_unavailable')
+      return t('accounts.connectionTest.errors.notSent')
+  }
   return event.gatewayErrorCode
     ? CONNECTION_TEST_FAILURE_TEXT.value[event.gatewayErrorCode] || t('accounts.connectionTest.errors.unknown')
     : t('accounts.connectionTest.errors.failed')
@@ -146,6 +157,7 @@ function connectionTestFailureDiagnostics(event: ConnectionTestFailureEvent) {
   return {
     error: event.error ?? null,
     gatewayErrorCode: event.gatewayErrorCode ?? null,
+    proxyHint: event.proxyHint ?? null,
     sendState: event.sendState ?? null,
     upstreamStatus: event.upstreamStatus ?? null,
     providerErrorCode: event.providerErrorCode ?? null,
@@ -166,7 +178,6 @@ export function useAccountConnectionTest(options: { reload: () => Promise<unknow
   const connectionTestStartedAt = shallowRef('')
   const connectionTestFinishedAt = shallowRef('')
   const connectionTestDurationMs = shallowRef<number | null>(null)
-  const testingConnections = useIdSet<string>()
   const modelsRequest = useRequestState()
   const modelsRequestMode = shallowRef<'load' | 'refresh'>('load')
   const loadingConnectionTestModels = computed(() => modelsRequest.loading.value && modelsRequestMode.value === 'load')
@@ -190,7 +201,8 @@ export function useAccountConnectionTest(options: { reload: () => Promise<unknow
   }, { flush: 'sync' })
 
   let connectionTestStartedAtMs = 0
-  let connectionTestRun: ConnectionTestRun | undefined
+  const connectionTestRun = shallowRef<ConnectionTestRun>()
+  const testingAccountId = computed(() => connectionTestRun.value?.accountId)
 
   const connectionTestStatusView = computed(() => {
     if (connectionTestStatus.value === 'running') {
@@ -214,7 +226,7 @@ export function useAccountConnectionTest(options: { reload: () => Promise<unknow
     if (connectionTestStatus.value === 'error') {
       return {
         label: t('accounts.connectionTest.failed'),
-        description: t('accounts.connectionTest.failedDescription'),
+        description: connectionTestLogs.value.at(-1)?.failureMessage,
         icon: XCircle,
         badge: 'bg-z-error-container text-z-error-on-container',
         iconClass: 'text-z-error',
@@ -230,7 +242,7 @@ export function useAccountConnectionTest(options: { reload: () => Promise<unknow
   })
 
   function openConnectionTest(account: Account) {
-    abortConnectionTest()
+    clearConnectionTestRun()
     testingAccount.value = account
     connectionTestSelectedModel.value = ''
     connectionTestPrompt.value = 'Reply with exactly OK.'
@@ -327,12 +339,11 @@ export function useAccountConnectionTest(options: { reload: () => Promise<unknow
     )
   }
 
-  function clearConnectionTestRun(run = connectionTestRun) {
-    if (!run || run !== connectionTestRun)
+  function clearConnectionTestRun(run = connectionTestRun.value) {
+    if (!run || run !== connectionTestRun.value)
       return
-    connectionTestRun = undefined
+    connectionTestRun.value = undefined
     run.controller.abort()
-    testingConnections.remove(run.accountId)
   }
 
   function recordConnectionTestFailure(
@@ -342,8 +353,10 @@ export function useAccountConnectionTest(options: { reload: () => Promise<unknow
     detail?: unknown,
     event?: ConnectionTestTimestamp,
   ) {
-    connectionTestError.value = message
-    setConnectionTestLog(key, `${label}：${message}`, 'danger', detail, event)
+    connectionTestLogs.value.push({
+      ...connectionTestLogItem(key, label, 'danger', detail, event),
+      failureMessage: message,
+    })
     finishConnectionTest('error', event)
   }
 
@@ -402,10 +415,6 @@ export function useAccountConnectionTest(options: { reload: () => Promise<unknow
       clearConnectionTestRun()
       void options.reload()
     }
-  }
-
-  function abortConnectionTest() {
-    clearConnectionTestRun()
   }
 
   async function loadConnectionTestModels(account = testingAccount.value, refresh = false) {
@@ -470,8 +479,9 @@ export function useAccountConnectionTest(options: { reload: () => Promise<unknow
     await loadConnectionTestModels(account, true)
   }
 
-  async function handleTestConnection(account = testingAccount.value) {
-    if (!account?.id)
+  async function handleTestConnection() {
+    const account = testingAccount.value
+    if (!account || connectionTestRun.value)
       return
     if (!connectionTestSelectedModel.value) {
       connectionTestError.value = t('accounts.connectionTest.errors.modelRequired')
@@ -481,25 +491,15 @@ export function useAccountConnectionTest(options: { reload: () => Promise<unknow
       connectionTestError.value = t('accounts.connectionTest.errors.promptRequired')
       return
     }
-    if (testingConnections.has(account.id))
-      return
-    abortConnectionTest()
+    resetConnectionTest()
     connectionTestStatus.value = 'running'
-    connectionTestModel.value = ''
-    connectionTestContent.value = ''
-    connectionTestLogs.value = []
-    connectionTestError.value = ''
-    connectionTestDurationMs.value = null
     connectionTestModel.value = connectionTestSelectedModel.value
     connectionTestStartedAtMs = performance.now()
-    connectionTestStartedAt.value = ''
-    connectionTestFinishedAt.value = ''
-    testingConnections.add(account.id)
     const run: ConnectionTestRun = {
       accountId: account.id,
       controller: new AbortController(),
     }
-    connectionTestRun = run
+    connectionTestRun.value = run
     try {
       const response = await testAccountConnection({
         accountId: account.id,
@@ -508,11 +508,11 @@ export function useAccountConnectionTest(options: { reload: () => Promise<unknow
         reasoningEffort: connectionTestReasoningEffort.value || undefined,
       }, { signal: run.controller.signal, silent: true })
       await readConnectionTestStream(response, run)
-      if (connectionTestRun === run && connectionTestStatus.value === 'running')
+      if (connectionTestRun.value === run && connectionTestStatus.value === 'running')
         recordConnectionTestFailure('failure', t('accounts.connectionTest.failed'), t('accounts.connectionTest.errors.missingCompletion'))
     }
     catch (error: unknown) {
-      if (connectionTestRun === run)
+      if (connectionTestRun.value === run)
         recordConnectionTestFailure('failure', t('accounts.connectionTest.failed'), errorMessage(error, t('accounts.connectionTest.errors.failed')))
     }
     finally {
@@ -528,15 +528,15 @@ export function useAccountConnectionTest(options: { reload: () => Promise<unknow
     let buffer = ''
     try {
       for (;;) {
-        if (connectionTestRun !== run)
+        if (connectionTestRun.value !== run)
           break
         const { done, value } = await reader.read()
-        if (done || connectionTestRun !== run)
+        if (done || connectionTestRun.value !== run)
           break
         buffer += decoder.decode(value, { stream: true })
         let boundary = buffer.match(/\r?\n\r?\n/)
         while (boundary?.index !== undefined) {
-          if (connectionTestRun !== run)
+          if (connectionTestRun.value !== run)
             return
           const frame = buffer.slice(0, boundary.index)
           buffer = buffer.slice(boundary.index + boundary[0].length)
@@ -571,12 +571,12 @@ export function useAccountConnectionTest(options: { reload: () => Promise<unknow
   ], ([open]) => {
     modelsRequest.invalidate({ resetLoading: open })
     if (!open) {
-      abortConnectionTest()
+      clearConnectionTestRun()
     }
   }, { flush: 'sync' })
 
   onBeforeUnmount(() => {
-    abortConnectionTest()
+    clearConnectionTestRun()
   })
 
   return {
@@ -589,7 +589,7 @@ export function useAccountConnectionTest(options: { reload: () => Promise<unknow
     connectionTestStartedAt,
     connectionTestFinishedAt,
     connectionTestDurationMs,
-    testingConnectionIds: testingConnections.ids,
+    testingAccountId,
     loadingConnectionTestModels,
     refreshingConnectionTestModels,
     connectionTestSelectedModel,

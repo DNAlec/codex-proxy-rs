@@ -991,6 +991,7 @@ mod actions {
             DomainConnectionTestEvent::Failed {
                 source: AccountProbeErrorSource::Upstream,
                 gateway_error_code: GatewayErrorKind::RateLimited,
+                proxy_hint: None,
                 send_state: Some(UpstreamSendState::Sent),
                 message: "upstream unavailable".to_owned(),
                 provider_error_code: Some("usage_exhausted".to_owned()),
@@ -1030,7 +1031,7 @@ mod actions {
         assert_eq!(
             events,
             [
-                json!({ "type": "test_start", "model": "grok-4.5", "text": "正在连接上游 Responses" }),
+                json!({ "type": "test_start", "model": "grok-4.5", "text": "正在连接上游" }),
                 json!({
                     "type": "request",
                     "payload": {
@@ -1052,6 +1053,7 @@ mod actions {
                     "type": "error",
                     "source": "upstream",
                     "gatewayErrorCode": "rate_limited",
+                    "proxyHint": null,
                     "sendState": "sent",
                     "error": "upstream unavailable",
                     "providerErrorCode": "usage_exhausted",

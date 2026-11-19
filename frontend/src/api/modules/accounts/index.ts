@@ -76,6 +76,7 @@ export type {
 } from './personal-info'
 
 export {
+  getAccountQuota,
   getAccountQuotaForecast,
   refreshAccountQuota,
 } from './quota'
@@ -109,6 +110,7 @@ export type {
   AccountModelUsage,
   AccountProtectionRule,
   AccountQuota,
+  AccountQuotaBucketSettings,
   AccountQuotaCredits,
   AccountQuotaWindow,
   AccountRefreshResponse,
