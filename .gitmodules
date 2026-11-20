@@ -3,4 +3,4 @@
 	url = https://github.com/zyycn/codex-proxy-ui.git
 [submodule "modules/plugins"]
 	path = modules/plugins
-	url = https://github.com/zyycn/codex-proxy-plugins.git
+	url = https://github.com/DNAlec/codex-proxy-plugins.git

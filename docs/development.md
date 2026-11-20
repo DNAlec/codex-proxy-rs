@@ -76,7 +76,7 @@ OpenAI 的 `transport::tls::` 测试在本机回环地址采集 ClientHello，�
 | --- | --- |
 | `frontend` / `backend` | 宿主管理端与 Rust 网关 |
 | `modules/ui` | `codex-proxy-ui`，共用组件与主题 |
-| `modules/plugins` | `codex-proxy-plugins`，官方插件示例 |
+| `modules/plugins` | `DNAlec/codex-proxy-plugins`，适配当前宿主 SDK 的工作台示例 |
 
 各仓库的 CI 使用锁定依赖。联调前确认所选提交的公开接口兼容
 
